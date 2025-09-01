@@ -2,14 +2,19 @@
 
 **Your ultimate companion for navigating 9,300+ Game Grumps episodes!**
 
+![GG Shuffle GUI](Screenshot%20from%202025-09-01%2001-03-47.png)
+
+*Beautiful dark theme GTK interface with instant thumbnail loading and smooth navigation*
+
 ## ✨ Features
 
 - **🎲 Smart Randomization** - Never get stuck choosing what to watch
-- **🔗 YouTube Integration** - Direct links for FreeTube compatibility
-- **📝 Episode Synopses** - Know what you're getting into before watching
-- **🎯 Series Filtering** - Binge specific games or eras
-- **🧠 Quiz Mode** - Test your Grumps knowledge
+- **🔗 YouTube Integration** - Direct links for FreeTube compatibility  
+- **🖼️ Thumbnail Previews** - See episode thumbnails instantly with smart caching
+- **🌙 Beautiful Dark Theme** - Cursor-like aesthetic with smooth animations
+- **⌨️ Keyboard Navigation** - Full arrow key and shortcut support
 - **💾 Offline Database** - No internet needed for episode browsing
+- **🚀 Production Ready** - Async loading, error handling, and performance optimized
 
 ## �� Quick Start
 
@@ -64,32 +69,28 @@ game-grumps-randomizer/
 ## 🛠️ Tech Stack
 
 - **Python 3.8+** - Core language
-- **Modern Packaging** - pyproject.toml, no __init__.py files
-- **SQLite** - Episode database
-- **tkinter** - GUI framework
-- **requests/beautifulsoup** - Web scraping
-- **pytest** - Testing framework
+- **GTK3 + PyGObject** - Beautiful, native GUI framework
+- **SQLite** - Episode database with yt-dlp integration
+- **Async Processing** - Non-blocking thumbnail loading and caching
+- **Modern Python** - Type hints, pathlib, and best practices
 
 ## 🚀 Development
 
 ```bash
-# Setup development environment
-make dev-setup
+# Launch the beautiful GTK GUI
+make gui
 
-# Run tests
-make test
+# Or run directly
+python3 gg_gui.py
 
-# Format code
-make format
+# Build/refresh the video database
+make scrape
 
-# Lint code
-make lint
+# Pick random videos from CLI
+make random
 
-# Run with sample data
-make demo
-
-# Build package
-make build
+# Interactive TUI (if you prefer terminal)
+make tui
 ```
 
 ## 📦 Installation
@@ -108,12 +109,25 @@ make quick-start
 
 ## 🎮 Usage
 
-1. **Launch the app** - `python run.py`
-2. **Set filters** - Choose game series, episode type, etc.
-3. **Hit SHUFFLE** - Get a random episode
-4. **Read synopsis** - Learn about the episode
-5. **Open in FreeTube** - Watch the episode
-6. **Rate & track** - Mark as watched with rating
+### GTK GUI (Recommended)
+1. **Launch** - `make gui` or `python3 gg_gui.py`
+2. **Shuffle** - Press Enter/Space or click Shuffle button
+3. **Navigate** - Use arrow keys to move between buttons
+4. **Actions** - Open in browser (B), FreeTube (F), copy URL (C)
+5. **Exit** - Press Q/Esc or click Exit button
+
+### Keyboard Shortcuts
+- **Enter/Space** - Shuffle to new random video
+- **B** - Open current video in browser
+- **F** - Open current video in FreeTube
+- **C** - Copy video URL to clipboard
+- **Q/Esc** - Exit application
+- **Arrow Keys** - Navigate between buttons and fields
+
+### CLI Mode
+1. **Build database** - `make scrape`
+2. **Random pick** - `make random` (opens in browser)
+3. **Interactive** - `make tui` (fuzzy search interface)
 
 ---
 
