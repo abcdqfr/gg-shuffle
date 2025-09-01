@@ -151,9 +151,13 @@ class GGWindow(Gtk.Window):
         content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         root.pack_start(content, True, True, 0)
 
-        # Thumbnail
+        # Thumbnail with fixed size to prevent layout jumping
         self.thumb = Gtk.Image()
+        self.thumb.set_size_request(320, 180)  # Reserve space
+        self.thumb.set_halign(Gtk.Align.CENTER)
+        self.thumb.set_valign(Gtk.Align.CENTER)
         thumb_frame = Gtk.Frame()
+        thumb_frame.set_size_request(320, 180)  # Fixed frame size
         thumb_frame.add(self.thumb)
         content.pack_start(thumb_frame, False, False, 0)
 
@@ -221,14 +225,9 @@ class GGWindow(Gtk.Window):
         self.exit_btn.set_can_focus(True)
         btns.pack_end(self.exit_btn, False, False, 0)
 
-        # Focus chain for arrow-key navigation
-        btns.set_focus_chain([
-            self.shuffle_btn,
-            self.browser_btn,
-            self.freetube_btn,
-            self.copy_btn,
-            self.exit_btn,
-        ])
+        # Focus chain for arrow-key navigation (GTK3 compatible)
+        # Note: set_focus_chain is deprecated but still functional
+        # Arrow keys will work with default GTK focus behavior
 
         # Keyboard shortcuts
         self.shuffle_btn.set_can_default(True)
@@ -286,19 +285,28 @@ class GGWindow(Gtk.Window):
         self.id_entry.set_text(vid)
         self.ft_entry.set_text(ft)
         
-        # Clear thumbnail first, then load async
-        self.thumb.clear()
+        # Show loading placeholder while loading thumbnail async
+        self._set_loading_placeholder()
         load_thumbnail_async(vid, self._on_thumbnail_loaded)
         
         # Focus URL for quick copy
         self.url_entry.select_region(0, -1)
         self.url_entry.grab_focus()
 
+    def _set_loading_placeholder(self) -> None:
+        """Set a subtle loading placeholder that maintains layout."""
+        # Create a simple gray placeholder at 320x180
+        placeholder = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 320, 180)
+        placeholder.fill(0x2b2d31ff)  # Dark gray matching our theme
+        self.thumb.set_from_pixbuf(placeholder)
+
     def _on_thumbnail_loaded(self, pixbuf: Optional[GdkPixbuf.Pixbuf]) -> None:
         """Callback when thumbnail is loaded (from cache or download)."""
         if pixbuf is not None:
             self.thumb.set_from_pixbuf(pixbuf)
-        # If pixbuf is None, thumbnail stays cleared (no placeholder needed)
+        else:
+            # Keep placeholder if no thumbnail available
+            self._set_loading_placeholder()
 
     def on_shuffle(self, _btn: Gtk.Button) -> None:
         self.load_random()
