@@ -529,15 +529,35 @@ class GGWindow(Gtk.Window):
         # Add to stack
         print("DEBUG: Adding test UI to stack")
         self.content_stack.add_named(test_box, "main")
+        
+        # Try different switching methods
+        print("DEBUG: Attempting stack switch...")
         self.content_stack.set_visible_child_name("main")
+        print(f"DEBUG: After set_visible_child_name: {self.content_stack.get_visible_child_name()}")
         
         # Force refresh
         print("DEBUG: Forcing UI refresh")
         self.content_stack.show_all()
         self.show_all()
         
-        print(f"DEBUG: Current visible child: {self.content_stack.get_visible_child_name()}")
+        # Try direct child switching
+        print("DEBUG: Trying direct child switching...")
+        self.content_stack.set_visible_child(test_box)
+        print(f"DEBUG: After set_visible_child: {self.content_stack.get_visible_child_name()}")
+        
         print("DEBUG: _test_ui_switch completed")
+        
+        # Additional debugging - check stack properties
+        print(f"DEBUG: Stack has {len(self.content_stack.get_children())} children")
+        for i, child in enumerate(self.content_stack.get_children()):
+            name = self.content_stack.child_get_property(child, "name")
+            visible = self.content_stack.child_get_property(child, "visible")
+            print(f"DEBUG: Child {i}: name='{name}', visible={visible}")
+        
+        # Try to force the window to update
+        print("DEBUG: Forcing window update...")
+        self.queue_draw()
+        GLib.idle_add(self.queue_draw)
 
     def _auto_continue_to_app(self) -> bool:
         """Auto-continue to main app after delay."""
