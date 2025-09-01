@@ -236,9 +236,11 @@ class GGWindow(Gtk.Window):
 
     def _build_main_ui(self) -> None:
         """Build main shuffler UI.""" 
+        print("DEBUG: _build_main_ui called!")  # Debug log
         # Clean up any existing main UI to prevent duplicate stack children
         existing_main = self.content_stack.get_child_by_name("main")
         if existing_main:
+            print("DEBUG: Removing existing main UI")  # Debug log
             self.content_stack.remove(existing_main)
         
         # Ensure we have a fresh database connection
@@ -438,39 +440,21 @@ class GGWindow(Gtk.Window):
         self.is_updating_db = False
         self.welcome_progress.set_text("Database build complete!")
         self.welcome_progress.set_fraction(1.0)
-        self._set_status("Database build complete - switching to main view...")
+        self._set_status("Database build complete - ready to continue!")
         
-        # Add "Continue" button and auto-switch after delay
-        self.build_db_button.set_label("✅ Build Complete!")
-        self.build_db_button.set_sensitive(False)
+        # Transform the build button into a continue button
+        self.build_db_button.set_label("✅ READY!")
+        self.build_db_button.set_sensitive(True)
+        self.build_db_button.connect("clicked", self._on_continue_to_app)
+        self.build_db_button.get_style_context().add_class("suggested-action")
+        self.build_db_button.set_can_default(True)
+        self.set_default(self.build_db_button)
         
-        # Add continue button
-        continue_btn = Gtk.Button.new_with_mnemonic("_Continue to App")
-        continue_btn.connect("clicked", self._on_continue_to_app)
-        continue_btn.get_style_context().add_class("suggested-action")
-        continue_btn.set_can_focus(True)
-        continue_btn.set_can_default(True)
-        self.set_default(continue_btn)
+        # Make button larger
+        self.build_db_button.set_size_request(200, 50)
         
-        # Find the button box and add continue button
-        welcome_box = self.content_stack.get_child_by_name("welcome")
-        button_box = None
-        for child in welcome_box.get_children():
-            if isinstance(child, Gtk.Box) and child != welcome_box:
-                # Check if this box contains buttons
-                for grandchild in child.get_children():
-                    if isinstance(grandchild, Gtk.Button):
-                        button_box = child
-                        break
-                if button_box:
-                    break
-        
-        if button_box:
-            button_box.pack_start(continue_btn, False, False, 0)
-            continue_btn.show()
-        
-        # Auto-switch after 3 seconds
-        GLib.timeout_add_seconds(3, self._auto_continue_to_app)
+        # Auto-switch after 5 seconds
+        GLib.timeout_add_seconds(5, self._auto_continue_to_app)
         
         # Reconnect to database for when we switch
         try:
@@ -485,6 +469,8 @@ class GGWindow(Gtk.Window):
 
     def _on_continue_to_app(self, widget: Gtk.Widget) -> None:
         """Manually continue to main app."""
+        print("DEBUG: _on_continue_to_app called!")  # Debug log
+        self._set_status("Switching to main app...")
         self._build_main_ui()
 
     def _auto_continue_to_app(self) -> bool:
