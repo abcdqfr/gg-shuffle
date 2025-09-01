@@ -61,10 +61,6 @@ game-grumps-randomizer/
 - [x] Core randomizer engine
 - [x] Simple GUI interface
 - [x] FreeTube integration
-- [ ] Quiz mode
-- [ ] Series filtering
-- [ ] Personal watch history
-- [ ] YouTube scraping for real episodes
 
 ## 🛠️ Tech Stack
 
@@ -97,14 +93,14 @@ make tui
 
 ```bash
 # Clone repository
-git clone <your-repo-url>
+git clone https://github.com/abcdqfr/gg-shuffle
 cd game-grumps-randomizer
 
 # Install dependencies
-pip install -r requirements.txt
+pipx install -r requirements.txt
 
 # Run with sample data
-make quick-start
+#???? README WILDLY OUT OF DATE, REFACTOR!
 ```
 
 ## 🎮 Usage
@@ -130,14 +126,6 @@ make quick-start
 3. **Interactive** - `make tui` (fuzzy search interface)
 
 ---
-
-*"I'm not gonna sugarcoat it, this is gonna be a rough one." - Arin Hanson*
-
-*"But we're gonna get through it together!" - Dan Avidan*
-
-## Game Grumps Randomizer (KISS)
-
-Minimal, shell-first tool to index Game Grumps videos and shuffle them.
 
 ### Prereqs
 - yt-dlp (`pipx install yt-dlp` recommended)
