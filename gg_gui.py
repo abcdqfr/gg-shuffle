@@ -423,7 +423,39 @@ class GGWindow(Gtk.Window):
         self.welcome_progress.set_fraction(1.0)
         self._set_status("Database build complete - switching to main view...")
         
-        # Reconnect to database
+        # Add "Continue" button and auto-switch after delay
+        self.build_db_button.set_label("✅ Build Complete!")
+        self.build_db_button.set_sensitive(False)
+        
+        # Add continue button
+        continue_btn = Gtk.Button.new_with_mnemonic("_Continue to App")
+        continue_btn.connect("clicked", self._on_continue_to_app)
+        continue_btn.get_style_context().add_class("suggested-action")
+        continue_btn.set_can_focus(True)
+        continue_btn.set_can_default(True)
+        self.set_default(continue_btn)
+        
+        # Find the button box and add continue button
+        welcome_box = self.content_stack.get_child_by_name("welcome")
+        button_box = None
+        for child in welcome_box.get_children():
+            if isinstance(child, Gtk.Box) and child != welcome_box:
+                # Check if this box contains buttons
+                for grandchild in child.get_children():
+                    if isinstance(grandchild, Gtk.Button):
+                        button_box = child
+                        break
+                if button_box:
+                    break
+        
+        if button_box:
+            button_box.pack_start(continue_btn, False, False, 0)
+            continue_btn.show()
+        
+        # Auto-switch after 3 seconds
+        GLib.timeout_add_seconds(3, self._auto_continue_to_app)
+        
+        # Reconnect to database for when we switch
         try:
             self.conn = sqlite3.connect(str(DB_PATH))
             cursor = self.conn.cursor()
@@ -431,11 +463,18 @@ class GGWindow(Gtk.Window):
             count = cursor.fetchone()[0]
             self._set_status(f"Ready - {count:,} videos in database")
             
-            # Switch to main UI
-            self._build_main_ui()
-            
         except sqlite3.Error as e:
             self._on_build_error(f"Database connection error: {e}")
+
+    def _on_continue_to_app(self, widget: Gtk.Widget) -> None:
+        """Manually continue to main app."""
+        self._build_main_ui()
+
+    def _auto_continue_to_app(self) -> bool:
+        """Auto-continue to main app after delay."""
+        if self.content_stack.get_visible_child_name() == "welcome":
+            self._build_main_ui()
+        return False  # Don't repeat
 
     def _on_build_error(self, error_msg: str) -> None:
         """Handle database build error."""
