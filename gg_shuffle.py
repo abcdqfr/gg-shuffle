@@ -236,6 +236,25 @@ class GGWindow(Gtk.Window):
 
     def _build_main_ui(self) -> None:
         """Build main shuffler UI.""" 
+        # Clean up any existing main UI to prevent duplicate stack children
+        existing_main = self.content_stack.get_child_by_name("main")
+        if existing_main:
+            self.content_stack.remove(existing_main)
+        
+        # Ensure we have a fresh database connection
+        try:
+            if self.conn:
+                self.conn.close()
+            self.conn = sqlite3.connect(str(DB_PATH))
+            # Test the connection
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM videos")
+            count = cursor.fetchone()[0]
+            self._set_status(f"Connected - {count:,} videos available")
+        except sqlite3.Error as e:
+            self._set_status(f"Database error: {e}")
+            return
+        
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         
         # Content row: thumbnail | details
