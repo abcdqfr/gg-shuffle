@@ -237,14 +237,15 @@ class GGWindow(Gtk.Window):
     def _build_main_ui(self) -> None:
         """Build main shuffler UI.""" 
         print("DEBUG: _build_main_ui called!")  # Debug log
-        # Clean up any existing main UI to prevent duplicate stack children
-        existing_main = self.content_stack.get_child_by_name("main")
-        if existing_main:
-            print("DEBUG: Removing existing main UI")  # Debug log
-            self.content_stack.remove(existing_main)
-        
-        # Ensure we have a fresh database connection
         try:
+            # Clean up any existing main UI to prevent duplicate stack children
+            existing_main = self.content_stack.get_child_by_name("main")
+            if existing_main:
+                print("DEBUG: Removing existing main UI")  # Debug log
+                self.content_stack.remove(existing_main)
+            
+            print("DEBUG: Setting up database connection...")  # Debug log
+            # Ensure we have a fresh database connection
             if self.conn:
                 self.conn.close()
             self.conn = sqlite3.connect(str(DB_PATH))
@@ -252,11 +253,18 @@ class GGWindow(Gtk.Window):
             cursor = self.conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM videos")
             count = cursor.fetchone()[0]
+            print(f"DEBUG: Database has {count} videos")  # Debug log
             self._set_status(f"Connected - {count:,} videos available")
         except sqlite3.Error as e:
+            print(f"DEBUG: Database error: {e}")  # Debug log
             self._set_status(f"Database error: {e}")
             return
+        except Exception as e:
+            print(f"DEBUG: Unexpected error in database setup: {e}")  # Debug log
+            self._set_status(f"Setup error: {e}")
+            return
         
+        print("DEBUG: Creating main UI components...")  # Debug log
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         
         # Content row: thumbnail | details
@@ -343,18 +351,29 @@ class GGWindow(Gtk.Window):
         self.exit_btn.set_can_focus(True)
         btns.pack_end(self.exit_btn, False, False, 0)
 
+        print("DEBUG: Adding main UI to stack...")  # Debug log
         # Add to stack
         self.content_stack.add_named(main_box, "main")
         self.content_stack.set_visible_child_name("main")
+        print("DEBUG: Main UI added to stack successfully")  # Debug log
+        
+        # Force UI refresh
+        print("DEBUG: Forcing UI refresh...")  # Debug log
+        self.content_stack.show_all()
+        self.show_all()
+        print(f"DEBUG: Current visible child: {self.content_stack.get_visible_child_name()}")  # Debug log
 
+        print("DEBUG: Setting up keyboard shortcuts...")  # Debug log
         # Keyboard shortcuts
         self.shuffle_btn.set_can_default(True)
         self.set_default(self.shuffle_btn)
         self.connect("key-press-event", self.on_key_press)
 
+        print("DEBUG: Loading initial random video...")  # Debug log
         # Initial load
         self.enable_actions()
         self.load_random()
+        print("DEBUG: _build_main_ui completed successfully!")  # Debug log
 
     def _apply_css(self) -> None:
         css = b"""
@@ -552,25 +571,36 @@ class GGWindow(Gtk.Window):
 
     # Core actions
     def load_random(self) -> None:
+        print("DEBUG: load_random called")  # Debug log
         if not self.conn:
+            print("DEBUG: No database connection")  # Debug log
             return
-        title, url = fetch_random(self.conn)
-        self.current_title, self.current_url = title, url
-        vid = extract_video_id(url)
-        self.current_video_id = vid
-        ft = f"freetube://{url}" if url else ""
-        self.title_lbl.set_text(title or "(No title)")
-        self.url_entry.set_text(url or "")
-        self.id_entry.set_text(vid)
-        self.ft_entry.set_text(ft)
-        
-        # Show loading placeholder while loading thumbnail async
-        self._set_loading_placeholder()
-        load_thumbnail_async(vid, self._on_thumbnail_loaded)
-        
-        # Focus URL for quick copy
-        self.url_entry.select_region(0, -1)
-        self.url_entry.grab_focus()
+        try:
+            print("DEBUG: Fetching random video...")  # Debug log
+            title, url = fetch_random(self.conn)
+            print(f"DEBUG: Got video - Title: {title[:50]}...")  # Debug log
+            self.current_title, self.current_url = title, url
+            vid = extract_video_id(url)
+            self.current_video_id = vid
+            ft = f"freetube://{url}" if url else ""
+            self.title_lbl.set_text(title or "(No title)")
+            self.url_entry.set_text(url or "")
+            self.id_entry.set_text(vid)
+            self.ft_entry.set_text(ft)
+            
+            print("DEBUG: Setting loading placeholder...")  # Debug log
+            # Show loading placeholder while loading thumbnail async
+            self._set_loading_placeholder()
+            load_thumbnail_async(vid, self._on_thumbnail_loaded)
+            
+            # Focus URL for quick copy
+            self.url_entry.select_region(0, -1)
+            self.url_entry.grab_focus()
+            print("DEBUG: load_random completed successfully")  # Debug log
+        except Exception as e:
+            print(f"DEBUG: Error in load_random: {e}")  # Debug log
+            import traceback
+            traceback.print_exc()
 
     def _set_loading_placeholder(self) -> None:
         """Set a subtle loading placeholder that maintains layout."""
