@@ -19,19 +19,18 @@
 ## 🚀 Quick Start
 
 1. **Clone** - `git clone https://github.com/abcdqfr/gg-shuffle`
-2. **Setup** - `cd game-grumps-randomizer && pipx install yt-dlp`
-3. **Build DB** - `make scrape` (scrapes all Game Grumps videos)
-4. **Launch GUI** - `make gui` or `python3 gg_gui.py`
+2. **Setup** - `cd gg-shuffle && pipx install yt-dlp`
+3. **Build DB** - `./gg.sh scrape` (scrapes all Game Grumps videos)
+4. **Launch GUI** - `python3 gg_gui.py`
 5. **Shuffle** - Press Enter/Space for random episodes
 6. **Enjoy** - Let the chaos decide your entertainment!
 
 ## 🏗️ Project Structure
 
 ```
-game-grumps-randomizer/
+gg-shuffle/
 ├── gg_gui.py                       # Beautiful GTK GUI with thumbnails
 ├── gg.sh                           # Monolithic CLI script (scrape/random/tui)
-├── Makefile                        # Development shortcuts
 ├── gamegrumps.db                  # SQLite database of videos
 └── README.md                       # This file
 ```
@@ -58,35 +57,32 @@ game-grumps-randomizer/
 ```bash
 # Clone repository
 git clone https://github.com/abcdqfr/gg-shuffle
-cd game-grumps-randomizer
+cd gg-shuffle
 
 # Install dependencies (only need yt-dlp for scraping)
 pipx install yt-dlp
 
 # Build the video database
-make scrape
+./gg.sh scrape
 
 # Launch the GUI
-make gui
+python3 gg_gui.py
 ```
 
 ## 🚀 Development
 
 ```bash
 # Launch the beautiful GTK GUI
-make gui
-
-# Or run directly
 python3 gg_gui.py
 
 # Build/refresh the video database
-make scrape
+./gg.sh scrape
 
 # Pick random videos from CLI
-make random
+./gg.sh random
 
 # Interactive TUI (if you prefer terminal)
-make tui
+./gg.sh tui
 ```
 
 ## 🎮 Usage
@@ -107,9 +103,9 @@ make tui
 - **Arrow Keys** - Navigate between buttons and fields
 
 ### CLI Mode
-1. **Build database** - `make scrape`
-2. **Random pick** - `make random` (opens in browser)
-3. **Interactive** - `make tui` (fuzzy search interface)
+1. **Build database** - `./gg.sh scrape`
+2. **Random pick** - `./gg.sh random` (opens in browser)
+3. **Interactive** - `./gg.sh tui` (fuzzy search interface)
 
 ---
 
@@ -142,11 +138,11 @@ All actions are via one script: `gg.sh`.
 ./gg.sh tui --db my.db
 ```
 
-### Makefile shortcuts
+### Direct Script Usage
 ```sh
-make scrape    # ./gg.sh scrape
-make random    # ./gg.sh random
-make tui       # ./gg.sh tui
+./gg.sh scrape    # Build/refresh database
+./gg.sh random    # Pick random video
+./gg.sh tui       # Interactive search
 ```
 
 ### Database
