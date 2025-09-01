@@ -227,9 +227,7 @@ class GGWindow(Gtk.Window):
         self.build_db_button.get_style_context().add_class("suggested-action")
         button_box.pack_start(self.build_db_button, False, False, 0)
         
-        skip_button = Gtk.Button.new_with_mnemonic("_Skip for Now")
-        skip_button.connect("clicked", self._on_skip_setup)
-        button_box.pack_start(skip_button, False, False, 0)
+
         
         welcome_box.pack_start(button_box, False, False, 0)
         
@@ -238,6 +236,20 @@ class GGWindow(Gtk.Window):
 
     def _build_main_ui(self) -> None:
         """Build main shuffler UI.""" 
+        # Ensure we have a fresh database connection
+        try:
+            if self.conn:
+                self.conn.close()
+            self.conn = sqlite3.connect(str(DB_PATH))
+            # Test the connection
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM videos")
+            count = cursor.fetchone()[0]
+            self._set_status(f"Connected - {count:,} videos available")
+        except sqlite3.Error as e:
+            self._set_status(f"Database error: {e}")
+            return
+        
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         
         # Content row: thumbnail | details
@@ -484,16 +496,7 @@ class GGWindow(Gtk.Window):
         self.welcome_progress.set_fraction(0.0)
         self._set_status(f"Build failed: {error_msg}")
 
-    def _on_skip_setup(self, widget: Gtk.Widget) -> None:
-        """Skip database setup and show empty main UI."""
-        self._set_status("Skipped database setup - limited functionality")
-        self._build_main_ui()
-        # Disable shuffle actions since no DB
-        self.shuffle_btn.set_sensitive(False)
-        self.browser_btn.set_sensitive(False)
-        self.freetube_btn.set_sensitive(False)
-        self.copy_btn.set_sensitive(False)
-        self.title_lbl.set_text("No database - click 'Update DB' to build one")
+
 
     def _on_update_database(self, widget: Gtk.Widget) -> None:
         """Update database in background."""
