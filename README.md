@@ -53,6 +53,23 @@ game-grumps-randomizer/
 - **Async Processing** - Non-blocking thumbnail loading and caching
 - **Modern Python** - Type hints, pathlib, and best practices
 
+## 📦 Installation
+
+```bash
+# Clone repository
+git clone https://github.com/abcdqfr/gg-shuffle
+cd game-grumps-randomizer
+
+# Install dependencies (only need yt-dlp for scraping)
+pipx install yt-dlp
+
+# Build the video database
+make scrape
+
+# Launch the GUI
+make gui
+```
+
 ## 🚀 Development
 
 ```bash
@@ -70,23 +87,6 @@ make random
 
 # Interactive TUI (if you prefer terminal)
 make tui
-```
-
-## 📦 Installation
-
-```bash
-# Clone repository
-git clone https://github.com/abcdqfr/gg-shuffle
-cd game-grumps-randomizer
-
-# Install dependencies (only need yt-dlp for scraping)
-pipx install yt-dlp
-
-# Build the video database
-make scrape
-
-# Launch the GUI
-make gui
 ```
 
 ## 🎮 Usage
