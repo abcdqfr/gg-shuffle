@@ -16,51 +16,34 @@
 - **💾 Offline Database** - No internet needed for episode browsing
 - **🚀 Production Ready** - Async loading, error handling, and performance optimized
 
-## �� Quick Start
+## 🚀 Quick Start
 
-1. **Install** - `pip install -r requirements.txt`
-2. **Populate** - `make populate-sample` (adds 100 sample episodes)
-3. **Run** - `make run` or `python run.py`
-4. **Shuffle** - Hit the big button for random episode selection
-5. **Preview** - Read synopsis and episode details
-6. **Launch** - Open directly in FreeTube with one click
-7. **Enjoy** - Let the chaos decide your entertainment!
+1. **Clone** - `git clone https://github.com/abcdqfr/gg-shuffle`
+2. **Setup** - `cd game-grumps-randomizer && pipx install yt-dlp`
+3. **Build DB** - `make scrape` (scrapes all Game Grumps videos)
+4. **Launch GUI** - `make gui` or `python3 gg_gui.py`
+5. **Shuffle** - Press Enter/Space for random episodes
+6. **Enjoy** - Let the chaos decide your entertainment!
 
 ## 🏗️ Project Structure
 
 ```
 game-grumps-randomizer/
-├── src/
-│   └── game_grumps_randomizer/     # Main package (no __init__.py)
-│       ├── models/                  # Data models
-│       │   └── episode.py          # Episode data class
-│       ├── database/                # Database management
-│       │   └── episode_database.py # SQLite database
-│       ├── randomizer/              # Core randomization logic
-│       │   └── episode_randomizer.py
-│       ├── ui/                     # User interface
-│       │   └── main_window.py      # Main application window
-│       ├── scraper/                 # Web scraping
-│       │   └── youtube_scraper.py  # YouTube data collection
-│       ├── utils/                   # Utility functions
-│       │   └── data_populator.py   # Sample data generation
-│       └── main.py                 # Application entry point
-├── tests/                          # Test suite
-├── data/                           # Database storage
-├── run.py                          # Simple entry point
-├── pyproject.toml                  # Modern Python packaging
-├── requirements.txt                 # Core dependencies
-├── requirements-dev.txt             # Development dependencies
-└── Makefile                        # Development tasks
+├── gg_gui.py                       # Beautiful GTK GUI with thumbnails
+├── gg.sh                           # Monolithic CLI script (scrape/random/tui)
+├── Makefile                        # Development shortcuts
+├── gamegrumps.db                  # SQLite database of videos
+└── README.md                       # This file
 ```
 
 ## 🎯 Roadmap
 
-- [x] Project structure setup (modern Python standards)
-- [x] Episode data models and database
-- [x] Core randomizer engine
-- [x] Simple GUI interface
+- [x] Beautiful GTK GUI with dark theme
+- [x] Thumbnail previews with smart caching
+- [x] Full keyboard navigation
+- [x] YouTube video scraping via yt-dlp
 - [x] FreeTube integration
+- [x] Production-ready async processing
 
 ## 🛠️ Tech Stack
 
@@ -96,11 +79,14 @@ make tui
 git clone https://github.com/abcdqfr/gg-shuffle
 cd game-grumps-randomizer
 
-# Install dependencies
-pipx install -r requirements.txt
+# Install dependencies (only need yt-dlp for scraping)
+pipx install yt-dlp
 
-# Run with sample data
-#???? README WILDLY OUT OF DATE, REFACTOR!
+# Build the video database
+make scrape
+
+# Launch the GUI
+make gui
 ```
 
 ## 🎮 Usage
