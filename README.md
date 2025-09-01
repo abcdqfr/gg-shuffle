@@ -88,7 +88,7 @@ python3 gg_gui.py
 ## 🎮 Usage
 
 ### GTK GUI (Recommended)
-1. **Launch** - `make gui` or `python3 gg_gui.py`
+1. **Launch** - `python3 gg_gui.py`
 2. **Shuffle** - Press Enter/Space or click Shuffle button
 3. **Navigate** - Use arrow keys to move between buttons
 4. **Actions** - Open in browser (B), FreeTube (F), copy URL (C)
