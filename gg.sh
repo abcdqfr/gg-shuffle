@@ -34,8 +34,8 @@ USAGE
 }
 
 ensure_deps_tui() {
-  if ! command -v fzf >/dev/null 2>&1; then
-    echo "fzf is required for tui. Install it and retry." >&2
+  if ! command -v dialog >/dev/null 2>&1; then
+    echo "dialog is required for tui. Install it (e.g., sudo apt-get install -y dialog) and retry." >&2
     exit 1
   fi
 }
@@ -119,26 +119,75 @@ PY
 
 cmd_tui() {
   ensure_deps_tui
+  local MODE="browser"  # browser|freetube
   # Parse TUI flags
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --db) DB_PATH="$2"; shift 2;;
+      --freetube) MODE="freetube"; shift;;
+      --browser) MODE="browser"; shift;;
       -h|--help) usage; exit 0;;
       *) shift;;
     esac
   done
-  # Query and pipe to fzf
-  python3 - <<'PY' "$DB_PATH" | fzf --with-nth=1 --delimiter='|' --prompt="Search: " --height=90% --border --ansi | awk -F'|' '{print $2}' | xargs -r xdg-open >/dev/null 2>&1 || true
+
+  # Optional filter prompt
+  local FILTER
+  FILTER=$(dialog --inputbox "Filter titles (optional):" 8 70 2>&1 >/dev/tty || true)
+
+  # Generate menu data via Python
+  # Outputs lines: key|title|url
+  mapfile -t MENU_LINES < <(python3 - <<'PY' "$DB_PATH" "$FILTER"
 import sys, sqlite3
-DB = sys.argv[1]
+DB, filt = sys.argv[1], sys.argv[2]
 conn = sqlite3.connect(DB)
 c = conn.cursor()
-c.execute("SELECT title, url FROM videos ORDER BY title ASC")
-for title, url in c.fetchall():
-    safe_title = (title or "").replace("|", "-")
-    print(f"{safe_title}|{url}")
+if filt:
+    c.execute("SELECT title, url FROM videos WHERE title LIKE ? ORDER BY title ASC LIMIT 200", (f"%{filt}%",))
+else:
+    c.execute("SELECT title, url FROM videos ORDER BY title ASC LIMIT 200")
+rows = c.fetchall()
 conn.close()
-PY
+for idx, (title, url) in enumerate(rows, 1):
+    # Truncate title for dialog width
+    t = (title or "")
+    if len(t) > 70:
+        t = t[:67] + "..."
+    # Replace pipes to avoid delimiter conflicts
+    t = t.replace('|','-')
+    print(f"{idx}|{t}|{url}")
+PY)
+
+  if [[ ${#MENU_LINES[@]} -eq 0 ]]; then
+    dialog --msgbox "No results found." 6 40 >/dev/tty
+    return 0
+  fi
+
+  # Build dialog --menu args and a key->url map
+  declare -A KEY_TO_URL
+  local menu_args=()
+  local total=${#MENU_LINES[@]}
+  local title="Select a video (showing up to ${total})"
+  local key label url
+  for line in "${MENU_LINES[@]}"; do
+    IFS='|' read -r key label url <<<"$line"
+    KEY_TO_URL["$key"]="$url"
+    menu_args+=("$key" "$label")
+  done
+
+  local CHOICE
+  CHOICE=$(dialog --no-tags --menu "$title" 20 100 15 "${menu_args[@]}" 2>&1 >/dev/tty || true)
+  clear
+  if [[ -z "${CHOICE:-}" ]]; then
+    return 0
+  fi
+  local SEL_URL="${KEY_TO_URL[$CHOICE]}"
+  echo "Selected: $SEL_URL"
+  if [[ "$MODE" == "freetube" ]]; then
+    xdg-open "freetube://$SEL_URL" >/dev/null 2>&1 || true
+  else
+    xdg-open "$SEL_URL" >/dev/null 2>&1 || true
+  fi
 }
 
 case "$COMMAND" in
