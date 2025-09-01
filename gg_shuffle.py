@@ -464,7 +464,11 @@ class GGWindow(Gtk.Window):
         # Transform the build button into a continue button
         self.build_db_button.set_label("✅ READY!")
         self.build_db_button.set_sensitive(True)
+        
+        # Disconnect the old build handler and connect the continue handler
+        self.build_db_button.disconnect_by_func(self._on_build_database)
         self.build_db_button.connect("clicked", self._on_continue_to_app)
+        
         self.build_db_button.get_style_context().add_class("suggested-action")
         self.build_db_button.set_can_default(True)
         self.set_default(self.build_db_button)
@@ -490,12 +494,55 @@ class GGWindow(Gtk.Window):
         """Manually continue to main app."""
         print("DEBUG: _on_continue_to_app called!")  # Debug log
         self._set_status("Switching to main app...")
-        self._build_main_ui()
+        
+        # TEMPORARY: Skip database and just test UI switching
+        print("DEBUG: TEMPORARY - Skipping database, testing UI switch only")
+        self._test_ui_switch()
+
+    def _test_ui_switch(self) -> None:
+        """TEMPORARY: Test UI switching without database."""
+        print("DEBUG: _test_ui_switch called")
+        
+        # Clean up any existing main UI
+        existing_main = self.content_stack.get_child_by_name("main")
+        if existing_main:
+            print("DEBUG: Removing existing main UI")
+            self.content_stack.remove(existing_main)
+        
+        # Create a simple test main UI
+        print("DEBUG: Creating simple test main UI")
+        test_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        test_box.set_halign(Gtk.Align.CENTER)
+        test_box.set_valign(Gtk.Align.CENTER)
+        
+        # Add a test label
+        test_label = Gtk.Label()
+        test_label.set_markup("<big><b>MAIN UI TEST</b></big>")
+        test_label.get_style_context().add_class("gg-title")
+        test_box.pack_start(test_label, False, False, 0)
+        
+        # Add a test button
+        test_btn = Gtk.Button.new_with_mnemonic("_Test Button")
+        test_btn.connect("clicked", lambda w: print("DEBUG: Test button clicked!"))
+        test_box.pack_start(test_btn, False, False, 0)
+        
+        # Add to stack
+        print("DEBUG: Adding test UI to stack")
+        self.content_stack.add_named(test_box, "main")
+        self.content_stack.set_visible_child_name("main")
+        
+        # Force refresh
+        print("DEBUG: Forcing UI refresh")
+        self.content_stack.show_all()
+        self.show_all()
+        
+        print(f"DEBUG: Current visible child: {self.content_stack.get_visible_child_name()}")
+        print("DEBUG: _test_ui_switch completed")
 
     def _auto_continue_to_app(self) -> bool:
         """Auto-continue to main app after delay."""
         if self.content_stack.get_visible_child_name() == "welcome":
-            self._build_main_ui()
+            self._test_ui_switch()  # Use test function instead
         return False  # Don't repeat
 
     def _on_build_error(self, error_msg: str) -> None:
