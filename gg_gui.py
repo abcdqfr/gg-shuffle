@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """Minimal GTK GUI to shuffle and open Game Grumps videos (K.I.S.S.)."""
 
+import hashlib
 import sqlite3
+import threading
+import time
 import urllib.request
 import webbrowser
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
 import gi  # type: ignore
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GdkPixbuf  # type: ignore
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib  # type: ignore
 
 DB_PATH = Path(__file__).parent / "gamegrumps.db"
+CACHE_DIR = Path.home() / ".cache" / "gg-shuffle" / "thumbs"
+CACHE_MAX_AGE_DAYS = 30
 
 
 def fetch_random(conn: sqlite3.Connection) -> Tuple[str, str]:
@@ -32,12 +37,57 @@ def thumbnail_url(video_id: str) -> str:
     return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg" if video_id else ""
 
 
-def load_pixbuf_from_url(url: str, timeout: float = 5.0) -> GdkPixbuf.Pixbuf | None:
-    if not url:
+def init_cache() -> None:
+    """Initialize thumbnail cache directory."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def cache_path_for_video_id(video_id: str) -> Path:
+    """Get cache file path for a video ID."""
+    # Use hash to avoid filesystem issues with special chars
+    safe_name = hashlib.md5(video_id.encode()).hexdigest()
+    return CACHE_DIR / f"{safe_name}.jpg"
+
+
+def is_cache_valid(cache_file: Path) -> bool:
+    """Check if cached thumbnail is still valid (not expired)."""
+    if not cache_file.exists():
+        return False
+    age_seconds = time.time() - cache_file.stat().st_mtime
+    age_days = age_seconds / (24 * 3600)
+    return age_days < CACHE_MAX_AGE_DAYS
+
+
+def load_pixbuf_from_cache(video_id: str) -> Optional[GdkPixbuf.Pixbuf]:
+    """Load thumbnail from cache if available and valid."""
+    if not video_id:
         return None
+    cache_file = cache_path_for_video_id(video_id)
+    if is_cache_valid(cache_file):
+        try:
+            return GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                str(cache_file), 320, 180, True
+            )
+        except Exception:
+            # Cache file corrupted, remove it
+            cache_file.unlink(missing_ok=True)
+    return None
+
+
+def download_and_cache_thumbnail(video_id: str, url: str, timeout: float = 5.0) -> Optional[GdkPixbuf.Pixbuf]:
+    """Download thumbnail and save to cache."""
+    if not url or not video_id:
+        return None
+    
+    cache_file = cache_path_for_video_id(video_id)
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             data = resp.read()
+        
+        # Save to cache
+        cache_file.write_bytes(data)
+        
+        # Load as pixbuf
         loader = GdkPixbuf.PixbufLoader()
         loader.write(data)
         loader.close()
@@ -46,7 +96,29 @@ def load_pixbuf_from_url(url: str, timeout: float = 5.0) -> GdkPixbuf.Pixbuf | N
             return pixbuf.scale_simple(320, 180, GdkPixbuf.InterpType.BILINEAR)
         return pixbuf
     except Exception:
+        # Clean up partial cache file on error
+        cache_file.unlink(missing_ok=True)
         return None
+
+
+def load_thumbnail_async(video_id: str, callback) -> None:
+    """Load thumbnail with cache support in background thread."""
+    def worker():
+        # Try cache first
+        pixbuf = load_pixbuf_from_cache(video_id)
+        if pixbuf is not None:
+            GLib.idle_add(callback, pixbuf)
+            return
+        
+        # Download and cache
+        url = thumbnail_url(video_id)
+        pixbuf = download_and_cache_thumbnail(video_id, url)
+        GLib.idle_add(callback, pixbuf)
+    
+    if video_id:
+        threading.Thread(target=worker, daemon=True).start()
+    else:
+        GLib.idle_add(callback, None)
 
 
 class GGWindow(Gtk.Window):
@@ -54,6 +126,9 @@ class GGWindow(Gtk.Window):
         super().__init__(title="GG Shuffle")
         self.set_default_size(740, 320)
         self.connect("destroy", Gtk.main_quit)
+
+        # Initialize cache
+        init_cache()
 
         # Prefer dark theme + CSS styling
         settings = Gtk.Settings.get_default()
@@ -65,6 +140,7 @@ class GGWindow(Gtk.Window):
         self.conn = sqlite3.connect(str(DB_PATH)) if DB_PATH.exists() else None
         self.current_title: str = ""
         self.current_url: str = ""
+        self.current_video_id: str = ""
 
         # Root layout
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -203,20 +279,26 @@ class GGWindow(Gtk.Window):
         title, url = fetch_random(self.conn)
         self.current_title, self.current_url = title, url
         vid = extract_video_id(url)
+        self.current_video_id = vid
         ft = f"freetube://{url}" if url else ""
         self.title_lbl.set_text(title or "(No title)")
         self.url_entry.set_text(url or "")
         self.id_entry.set_text(vid)
         self.ft_entry.set_text(ft)
-        # Thumbnail
-        pix = load_pixbuf_from_url(thumbnail_url(vid))
-        if pix is not None:
-            self.thumb.set_from_pixbuf(pix)
-        else:
-            self.thumb.clear()
+        
+        # Clear thumbnail first, then load async
+        self.thumb.clear()
+        load_thumbnail_async(vid, self._on_thumbnail_loaded)
+        
         # Focus URL for quick copy
         self.url_entry.select_region(0, -1)
         self.url_entry.grab_focus()
+
+    def _on_thumbnail_loaded(self, pixbuf: Optional[GdkPixbuf.Pixbuf]) -> None:
+        """Callback when thumbnail is loaded (from cache or download)."""
+        if pixbuf is not None:
+            self.thumb.set_from_pixbuf(pixbuf)
+        # If pixbuf is None, thumbnail stays cleared (no placeholder needed)
 
     def on_shuffle(self, _btn: Gtk.Button) -> None:
         self.load_random()

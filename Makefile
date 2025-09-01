@@ -92,3 +92,6 @@ random:  ## Pick/open a random video from DB
 
 tui:  ## Interactive picker (fzf)
 	./gg.sh tui
+
+gui:  ## GTK GUI with thumbnails and caching
+	python3 gg_gui.py
