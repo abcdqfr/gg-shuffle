@@ -124,7 +124,7 @@ def load_thumbnail_async(video_id: str, callback) -> None:
 class GGWindow(Gtk.Window):
     def __init__(self) -> None:
         super().__init__(title="GG Shuffle")
-        self.set_default_size(740, 320)
+        self.set_default_size(740, 380)  # Taller for status bar
         self.connect("destroy", Gtk.main_quit)
 
         # Initialize cache
@@ -136,20 +136,113 @@ class GGWindow(Gtk.Window):
             settings.set_property("gtk-application-prefer-dark-theme", True)
         self._apply_css()
 
-        # DB
-        self.conn = sqlite3.connect(str(DB_PATH)) if DB_PATH.exists() else None
+        # State tracking
         self.current_title: str = ""
         self.current_url: str = ""
         self.current_video_id: str = ""
+        self.db_update_thread: Optional[threading.Thread] = None
+        self.is_updating_db: bool = False
 
         # Root layout
-        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        root.set_border_width(12)
-        self.add(root)
+        self.root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.root.set_border_width(12)
+        self.add(self.root)
 
+        # Status bar (always present)
+        self.status_bar = Gtk.Statusbar()
+        self.status_context_id = self.status_bar.get_context_id("main")
+        self.status_bar.get_style_context().add_class("gg-status")
+        
+        # Main content area (will be switched between welcome and main)
+        self.content_stack = Gtk.Stack()
+        self.content_stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        self.root.pack_start(self.content_stack, True, True, 0)
+        
+        # Add status bar at bottom
+        self.root.pack_start(self.status_bar, False, False, 0)
+
+        # Check DB state and show appropriate UI (now that status bar exists)
+        self.conn = None
+        self._check_database_state()
+        self._build_ui()
+
+    def _check_database_state(self) -> None:
+        """Check database existence and video count."""
+        if not DB_PATH.exists():
+            self._set_status("Database not found - welcome screen will be shown")
+            return
+        
+        try:
+            self.conn = sqlite3.connect(str(DB_PATH))
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM videos")
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                self._set_status("Database is empty - welcome screen will be shown")
+                self.conn.close()
+                self.conn = None
+            else:
+                self._set_status(f"Ready - {count:,} videos in database")
+        except sqlite3.Error as e:
+            self._set_status(f"Database error: {e}")
+            if self.conn:
+                self.conn.close()
+            self.conn = None
+
+    def _build_ui(self) -> None:
+        """Build appropriate UI based on database state."""
+        if self.conn is None:
+            self._build_welcome_ui()
+        else:
+            self._build_main_ui()
+
+    def _build_welcome_ui(self) -> None:
+        """Build welcome screen for first-time setup."""
+        welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        welcome_box.set_halign(Gtk.Align.CENTER)
+        welcome_box.set_valign(Gtk.Align.CENTER)
+        
+        # Welcome message
+        title = Gtk.Label()
+        title.set_markup("<big><b>Welcome to GG Shuffle!</b></big>")
+        title.get_style_context().add_class("gg-title")
+        welcome_box.pack_start(title, False, False, 0)
+        
+        subtitle = Gtk.Label(label="Let's build your Game Grumps video database first.")
+        welcome_box.pack_start(subtitle, False, False, 0)
+        
+        # Progress bar for database building
+        self.welcome_progress = Gtk.ProgressBar()
+        self.welcome_progress.set_show_text(True)
+        self.welcome_progress.set_text("Ready to start...")
+        welcome_box.pack_start(self.welcome_progress, False, False, 0)
+        
+        # Buttons
+        button_box = Gtk.Box(spacing=10)
+        button_box.set_halign(Gtk.Align.CENTER)
+        
+        self.build_db_button = Gtk.Button.new_with_mnemonic("_Build Database")
+        self.build_db_button.connect("clicked", self._on_build_database)
+        self.build_db_button.get_style_context().add_class("suggested-action")
+        button_box.pack_start(self.build_db_button, False, False, 0)
+        
+        skip_button = Gtk.Button.new_with_mnemonic("_Skip for Now")
+        skip_button.connect("clicked", self._on_skip_setup)
+        button_box.pack_start(skip_button, False, False, 0)
+        
+        welcome_box.pack_start(button_box, False, False, 0)
+        
+        self.content_stack.add_named(welcome_box, "welcome")
+        self.content_stack.set_visible_child_name("welcome")
+
+    def _build_main_ui(self) -> None:
+        """Build main shuffler UI.""" 
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        
         # Content row: thumbnail | details
         content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        root.pack_start(content, True, True, 0)
+        main_box.pack_start(content, True, True, 0)
 
         # Thumbnail with fixed size to prevent layout jumping
         self.thumb = Gtk.Image()
@@ -198,7 +291,7 @@ class GGWindow(Gtk.Window):
 
         # Buttons row
         btns = Gtk.Box(spacing=8)
-        root.pack_start(btns, False, False, 0)
+        main_box.pack_start(btns, False, False, 0)
 
         self.shuffle_btn = Gtk.Button.new_with_mnemonic("_Shuffle")
         self.shuffle_btn.connect("clicked", self.on_shuffle)
@@ -220,14 +313,20 @@ class GGWindow(Gtk.Window):
         self.copy_btn.set_can_focus(True)
         btns.pack_start(self.copy_btn, False, False, 0)
 
+        # Update database button
+        self.update_btn = Gtk.Button.new_with_mnemonic("_Update DB")
+        self.update_btn.connect("clicked", self._on_update_database)
+        self.update_btn.set_can_focus(True)
+        btns.pack_start(self.update_btn, False, False, 0)
+
         self.exit_btn = Gtk.Button.new_with_mnemonic("E_xit")
         self.exit_btn.connect("clicked", lambda _b: Gtk.main_quit())
         self.exit_btn.set_can_focus(True)
         btns.pack_end(self.exit_btn, False, False, 0)
 
-        # Focus chain for arrow-key navigation (GTK3 compatible)
-        # Note: set_focus_chain is deprecated but still functional
-        # Arrow keys will work with default GTK focus behavior
+        # Add to stack
+        self.content_stack.add_named(main_box, "main")
+        self.content_stack.set_visible_child_name("main")
 
         # Keyboard shortcuts
         self.shuffle_btn.set_can_default(True)
@@ -235,17 +334,8 @@ class GGWindow(Gtk.Window):
         self.connect("key-press-event", self.on_key_press)
 
         # Initial load
-        if self.conn is None:
-            self.title_lbl.set_text(
-                "Database not found. Run './gg.sh scrape' to create gamegrumps.db."
-            )
-            self.url_entry.set_text("")
-            self.id_entry.set_text("")
-            self.ft_entry.set_text("")
-            self.disable_actions()
-        else:
-            self.enable_actions()
-            self.load_random()
+        self.enable_actions()
+        self.load_random()
 
     def _apply_css(self) -> None:
         css = b"""
@@ -254,13 +344,169 @@ class GGWindow(Gtk.Window):
         entry { color: #e6e8eb; background: #2b2d31; border-radius: 6px; border: 1px solid #3a3d42; }
         button { background: #2b2d31; color: #e6e8eb; border: 1px solid #3a3d42; border-radius: 6px; padding: 6px 10px; }
         button:hover { background: #34373c; }
+        .suggested-action { background: #007acc; border-color: #007acc; }
+        .suggested-action:hover { background: #0085d1; }
         .gg-title { font-weight: 600; font-size: 16px; }
+        .gg-status { background: #2b2d31; color: #e6e8eb; border-top: 1px solid #3a3d42; }
         """
         provider = Gtk.CssProvider()
         provider.load_from_data(css)
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
+
+    def _set_status(self, message: str) -> None:
+        """Update status bar message."""
+        self.status_bar.remove_all(self.status_context_id)
+        self.status_bar.push(self.status_context_id, message)
+
+    def _on_build_database(self, widget: Gtk.Widget) -> None:
+        """Start building database in background thread."""
+        if self.is_updating_db:
+            return
+            
+        self.is_updating_db = True
+        self.build_db_button.set_sensitive(False)
+        self.welcome_progress.set_text("Starting database build...")
+        self._set_status("Building database - this may take a few minutes...")
+        
+        def build_worker():
+            try:
+                import subprocess
+                import os
+                
+                # Run gg.sh scrape
+                script_path = Path(__file__).parent / "gg.sh"
+                if not script_path.exists():
+                    GLib.idle_add(self._on_build_error, "gg.sh script not found")
+                    return
+                
+                # Update progress
+                GLib.idle_add(self.welcome_progress.set_text, "Downloading video list...")
+                GLib.idle_add(self.welcome_progress.pulse)
+                
+                result = subprocess.run(
+                    [str(script_path), "scrape"],
+                    cwd=str(script_path.parent),
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+                
+                if result.returncode == 0:
+                    GLib.idle_add(self._on_build_complete)
+                else:
+                    GLib.idle_add(self._on_build_error, f"Build failed: {result.stderr}")
+                    
+            except subprocess.TimeoutExpired:
+                GLib.idle_add(self._on_build_error, "Build timed out after 5 minutes")
+            except Exception as e:
+                GLib.idle_add(self._on_build_error, f"Build error: {e}")
+        
+        self.db_update_thread = threading.Thread(target=build_worker, daemon=True)
+        self.db_update_thread.start()
+        
+        # Start progress pulse
+        GLib.timeout_add(100, self._pulse_progress)
+
+    def _pulse_progress(self) -> bool:
+        """Pulse progress bar while building."""
+        if not self.is_updating_db:
+            return False
+        self.welcome_progress.pulse()
+        return True
+
+    def _on_build_complete(self) -> None:
+        """Handle successful database build."""
+        self.is_updating_db = False
+        self.welcome_progress.set_text("Database build complete!")
+        self.welcome_progress.set_fraction(1.0)
+        self._set_status("Database build complete - switching to main view...")
+        
+        # Reconnect to database
+        try:
+            self.conn = sqlite3.connect(str(DB_PATH))
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM videos")
+            count = cursor.fetchone()[0]
+            self._set_status(f"Ready - {count:,} videos in database")
+            
+            # Switch to main UI
+            self._build_main_ui()
+            
+        except sqlite3.Error as e:
+            self._on_build_error(f"Database connection error: {e}")
+
+    def _on_build_error(self, error_msg: str) -> None:
+        """Handle database build error."""
+        self.is_updating_db = False
+        self.build_db_button.set_sensitive(True)
+        self.welcome_progress.set_text(f"Error: {error_msg}")
+        self.welcome_progress.set_fraction(0.0)
+        self._set_status(f"Build failed: {error_msg}")
+
+    def _on_skip_setup(self, widget: Gtk.Widget) -> None:
+        """Skip database setup and show empty main UI."""
+        self._set_status("Skipped database setup - limited functionality")
+        self._build_main_ui()
+        # Disable shuffle actions since no DB
+        self.shuffle_btn.set_sensitive(False)
+        self.browser_btn.set_sensitive(False)
+        self.freetube_btn.set_sensitive(False)
+        self.copy_btn.set_sensitive(False)
+        self.title_lbl.set_text("No database - click 'Update DB' to build one")
+
+    def _on_update_database(self, widget: Gtk.Widget) -> None:
+        """Update database in background."""
+        if self.is_updating_db:
+            return
+            
+        self.is_updating_db = True
+        self.update_btn.set_sensitive(False)
+        self._set_status("Updating database...")
+        
+        def update_worker():
+            try:
+                import subprocess
+                script_path = Path(__file__).parent / "gg.sh"
+                
+                result = subprocess.run(
+                    [str(script_path), "scrape"],
+                    cwd=str(script_path.parent),
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+                
+                if result.returncode == 0:
+                    GLib.idle_add(self._on_update_complete)
+                else:
+                    GLib.idle_add(self._on_update_error, f"Update failed: {result.stderr}")
+                    
+            except Exception as e:
+                GLib.idle_add(self._on_update_error, f"Update error: {e}")
+        
+        threading.Thread(target=update_worker, daemon=True).start()
+
+    def _on_update_complete(self) -> None:
+        """Handle successful database update."""
+        self.is_updating_db = False
+        self.update_btn.set_sensitive(True)
+        
+        # Refresh database connection
+        if self.conn:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM videos")
+            count = cursor.fetchone()[0]
+            self._set_status(f"Database updated - {count:,} videos available")
+        else:
+            self._set_status("Database update complete")
+
+    def _on_update_error(self, error_msg: str) -> None:
+        """Handle database update error."""
+        self.is_updating_db = False
+        self.update_btn.set_sensitive(True)
+        self._set_status(f"Update failed: {error_msg}")
 
     # Enable/disable buttons based on DB availability
     def disable_actions(self) -> None:
