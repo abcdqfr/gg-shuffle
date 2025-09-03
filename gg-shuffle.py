@@ -234,15 +234,12 @@ class GGWindow(Gtk.Window):
 
     def _build_main_ui(self) -> None:
         """Build main shuffler UI.""" 
-        print("DEBUG: _build_main_ui called!")  # Debug log
         try:
             # Clean up any existing main UI to prevent duplicate stack children
             existing_main = self.content_stack.get_child_by_name("main")
             if existing_main:
-                print("DEBUG: Removing existing main UI")  # Debug log
                 self.content_stack.remove(existing_main)
             
-            print("DEBUG: Setting up database connection...")  # Debug log
             # Ensure we have a fresh database connection
             if self.conn:
                 self.conn.close()
@@ -251,18 +248,13 @@ class GGWindow(Gtk.Window):
             cursor = self.conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM videos")
             count = cursor.fetchone()[0]
-            print(f"DEBUG: Database has {count} videos")  # Debug log
             self._set_status(f"Connected - {count:,} videos available")
         except sqlite3.Error as e:
-            print(f"DEBUG: Database error: {e}")  # Debug log
             self._set_status(f"Database error: {e}")
             return
         except Exception as e:
-            print(f"DEBUG: Unexpected error in database setup: {e}")  # Debug log
             self._set_status(f"Setup error: {e}")
             return
-        
-        print("DEBUG: Creating main UI components...")  # Debug log
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         
         # Content row: thumbnail | details
@@ -349,29 +341,22 @@ class GGWindow(Gtk.Window):
         self.exit_btn.set_can_focus(True)
         btns.pack_end(self.exit_btn, False, False, 0)
 
-        print("DEBUG: Adding main UI to stack...")  # Debug log
         # Add to stack
         self.content_stack.add_named(main_box, "main")
         self.content_stack.set_visible_child_name("main")
-        print("DEBUG: Main UI added to stack successfully")  # Debug log
         
         # Force UI refresh
-        print("DEBUG: Forcing UI refresh...")  # Debug log
         self.content_stack.show_all()
         self.show_all()
-        print(f"DEBUG: Current visible child: {self.content_stack.get_visible_child_name()}")  # Debug log
 
-        print("DEBUG: Setting up keyboard shortcuts...")  # Debug log
         # Keyboard shortcuts
         self.shuffle_btn.set_can_default(True)
         self.set_default(self.shuffle_btn)
         self.connect("key-press-event", self.on_key_press)
 
-        print("DEBUG: Loading initial random video...")  # Debug log
         # Initial load
         self.enable_actions()
         self.load_random()
-        print("DEBUG: _build_main_ui completed successfully!")  # Debug log
 
     def _apply_css(self) -> None:
         css = b"""
@@ -456,110 +441,72 @@ class GGWindow(Gtk.Window):
         self.is_updating_db = False
         self.welcome_progress.set_text("Database build complete!")
         self.welcome_progress.set_fraction(1.0)
-        self._set_status("Database build complete - ready to continue!")
+        self._set_status("Database build complete - restarting app...")
         
-        # Transform the build button into a continue button
-        self.build_db_button.set_label("✅ READY!")
-        self.build_db_button.set_sensitive(True)
-        
-        # Disconnect the old build handler and connect the continue handler
-        self.build_db_button.disconnect_by_func(self._on_build_database)
-        self.build_db_button.connect("clicked", self._on_continue_to_app)
+        # Transform the build button into a countdown display
+        self.build_db_button.set_label("✅ Database Ready!")
+        self.build_db_button.set_sensitive(False)  # Make non-interactive
         
         self.build_db_button.get_style_context().add_class("suggested-action")
-        self.build_db_button.set_can_default(True)
-        self.set_default(self.build_db_button)
-        
-        # Make button larger
         self.build_db_button.set_size_request(200, 50)
         
-        # Auto-switch after 5 seconds
-        GLib.timeout_add_seconds(5, self._auto_continue_to_app)
+        # Start countdown and auto-restart
+        self._countdown_seconds = 3
+        self._update_countdown()
         
-        # Reconnect to database for when we switch
+        # Reconnect to database to verify it's ready
         try:
             self.conn = sqlite3.connect(str(DB_PATH))
             cursor = self.conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM videos")
             count = cursor.fetchone()[0]
-            self._set_status(f"Ready - {count:,} videos in database")
+            self._set_status(f"Database ready - {count:,} videos - restarting in {self._countdown_seconds}s...")
             
         except sqlite3.Error as e:
             self._on_build_error(f"Database connection error: {e}")
 
+    def _update_countdown(self) -> bool:
+        """Update countdown display and restart when done."""
+        if self._countdown_seconds > 0:
+            self.build_db_button.set_label(f"✅ Database Ready! ({self._countdown_seconds})")
+            self._set_status(f"Database ready - restarting in {self._countdown_seconds}s...")
+            self._countdown_seconds -= 1
+            GLib.timeout_add_seconds(1, self._update_countdown)
+            return False  # Don't repeat automatically
+        else:
+            # Countdown finished, restart the app
+            self._restart_app()
+            return False
+
+    def _restart_app(self) -> None:
+        """Restart the application with database present."""
+        import subprocess
+        import sys
+        
+        self._set_status("Restarting application...")
+        
+        try:
+            # Get the current script path
+            script_path = Path(__file__).resolve()
+            
+            # Start new instance
+            subprocess.Popen([sys.executable, str(script_path)])
+            
+            # Close current instance
+            Gtk.main_quit()
+            
+        except Exception as e:
+            self._set_status(f"Restart failed: {e}")
+            # Fallback: try to switch to main UI manually
+            self._on_continue_to_app(None)
+
     def _on_continue_to_app(self, _widget: Gtk.Widget) -> None:
-        """Manually continue to main app."""
+        """Fallback method for manual app switching (used if restart fails)."""
         print("DEBUG: _on_continue_to_app called!")  # Debug log
         self._set_status("Switching to main app...")
         
-        # TEMPORARY: Skip database and just test UI switching
-        print("DEBUG: TEMPORARY - Skipping database, testing UI switch only")
-        self._test_ui_switch()
-
-    def _test_ui_switch(self) -> None:
-        """TEMPORARY: Test UI switching without database."""
-        print("DEBUG: _test_ui_switch called")
-        
-        # Clean up any existing main UI
-        existing_main = self.content_stack.get_child_by_name("main")
-        if existing_main:
-            print("DEBUG: Removing existing main UI")
-            self.content_stack.remove(existing_main)
-        
-        # Create a simple test main UI
-        print("DEBUG: Creating simple test main UI")
-        test_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-        test_box.set_halign(Gtk.Align.CENTER)
-        test_box.set_valign(Gtk.Align.CENTER)
-        
-        # Add a test label
-        test_label = Gtk.Label()
-        test_label.set_markup("<big><b>MAIN UI TEST</b></big>")
-        test_label.get_style_context().add_class("gg-title")
-        test_box.pack_start(test_label, False, False, 0)
-        
-        # Add a test button
-        test_btn = Gtk.Button.new_with_mnemonic("_Test Button")
-        test_btn.connect("clicked", lambda _w: print("DEBUG: Test button clicked!"))
-        test_box.pack_start(test_btn, False, False, 0)
-        
-        # Add to stack
-        print("DEBUG: Adding test UI to stack")
-        self.content_stack.add_named(test_box, "main")
-        
-        # Try different switching methods
-        print("DEBUG: Attempting stack switch...")
-        self.content_stack.set_visible_child_name("main")
-        print(f"DEBUG: After set_visible_child_name: {self.content_stack.get_visible_child_name()}")
-        
-        # Force refresh
-        print("DEBUG: Forcing UI refresh")
-        self.content_stack.show_all()
-        self.show_all()
-        
-        # Try direct child switching
-        print("DEBUG: Trying direct child switching...")
-        self.content_stack.set_visible_child(test_box)
-        print(f"DEBUG: After set_visible_child: {self.content_stack.get_visible_child_name()}")
-        
-        print("DEBUG: _test_ui_switch completed")
-        
-        # Additional debugging - check stack properties
-        print(f"DEBUG: Stack has {len(self.content_stack.get_children())} children")
-        for i, child in enumerate(self.content_stack.get_children()):
-            name = self.content_stack.child_get_property(child, "name")
-            print(f"DEBUG: Child {i}: name='{name}'")
-        
-        # Try to force the window to update
-        print("DEBUG: Forcing window update...")
-        self.queue_draw()
-        GLib.idle_add(self.queue_draw)
-
-    def _auto_continue_to_app(self) -> bool:
-        """Auto-continue to main app after delay."""
-        if self.content_stack.get_visible_child_name() == "welcome":
-            self._test_ui_switch()  # Use test function instead
-        return False  # Don't repeat
+        # Build the main UI directly
+        self._build_main_ui()
 
     def _on_build_error(self, error_msg: str) -> None:
         """Handle database build error."""
@@ -631,14 +578,10 @@ class GGWindow(Gtk.Window):
 
     # Core actions
     def load_random(self) -> None:
-        print("DEBUG: load_random called")  # Debug log
         if not self.conn:
-            print("DEBUG: No database connection")  # Debug log
             return
         try:
-            print("DEBUG: Fetching random video...")  # Debug log
             title, url = fetch_random(self.conn)
-            print(f"DEBUG: Got video - Title: {title[:50]}...")  # Debug log
             self.current_url = url
             vid = extract_video_id(url)
             ft = f"freetube://{url}" if url else ""
@@ -647,7 +590,6 @@ class GGWindow(Gtk.Window):
             self.id_entry.set_text(vid)
             self.ft_entry.set_text(ft)
             
-            print("DEBUG: Setting loading placeholder...")  # Debug log
             # Show loading placeholder while loading thumbnail async
             self._set_loading_placeholder()
             load_thumbnail_async(vid, self._on_thumbnail_loaded)
@@ -655,11 +597,8 @@ class GGWindow(Gtk.Window):
             # Focus URL for quick copy
             self.url_entry.select_region(0, -1)
             self.url_entry.grab_focus()
-            print("DEBUG: load_random completed successfully")  # Debug log
         except Exception as e:
-            print(f"DEBUG: Error in load_random: {e}")  # Debug log
-            import traceback
-            traceback.print_exc()
+            self._set_status(f"Error loading video: {e}")
 
     def _set_loading_placeholder(self) -> None:
         """Set a subtle loading placeholder that maintains layout."""
