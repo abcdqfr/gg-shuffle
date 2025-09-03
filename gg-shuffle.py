@@ -477,8 +477,20 @@ class GGWindow(Gtk.Window):
             count = cursor.fetchone()[0]
             self._set_status(f"Database ready - {count:,} videos available")
             
-            # Switch to main UI after a brief delay
-            GLib.timeout_add_seconds(1, self._switch_to_main_ui)
+            # Transform the build button into a continue button
+            self.build_db_button.set_label("✅ Continue to App")
+            self.build_db_button.set_sensitive(True)
+            
+            # Disconnect the old build handler and connect the continue handler
+            self.build_db_button.disconnect_by_func(self._on_build_database)
+            self.build_db_button.connect("clicked", self._on_continue_to_app)
+            
+            self.build_db_button.get_style_context().add_class("suggested-action")
+            self.build_db_button.set_can_default(True)
+            self.set_default(self.build_db_button)
+            
+            # Make button larger and more prominent
+            self.build_db_button.set_size_request(200, 50)
             
         except sqlite3.Error as e:
             self._on_build_error(f"Database connection error: {e}")
@@ -489,8 +501,7 @@ class GGWindow(Gtk.Window):
         return False  # Don't repeat
 
     def _on_continue_to_app(self, _widget: Gtk.Widget) -> None:
-        """Fallback method for manual app switching (used if restart fails)."""
-        print("DEBUG: _on_continue_to_app called!")  # Debug log
+        """Continue to main app after database build."""
         self._set_status("Switching to main app...")
         
         # Build the main UI directly
