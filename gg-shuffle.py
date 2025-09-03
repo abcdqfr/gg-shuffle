@@ -182,6 +182,10 @@ class GGWindow(Gtk.Window):
 
         # State tracking
         self.current_url: str = ""
+        self.current_title: str = ""
+        self.current_video_id: str = ""
+        self.video_history: list = []  # List of (title, url, video_id) tuples
+        self.history_index: int = -1  # Current position in history
         self.db_update_thread: Optional[threading.Thread] = None
         self.is_updating_db: bool = False
 
@@ -353,6 +357,12 @@ class GGWindow(Gtk.Window):
         # Buttons row
         btns = Gtk.Box(spacing=8)
         main_box.pack_start(btns, False, False, 0)
+
+        self.prev_btn = Gtk.Button.new_with_mnemonic("_Previous")
+        self.prev_btn.connect("clicked", self.on_previous)
+        self.prev_btn.set_can_focus(True)
+        self.prev_btn.set_sensitive(False)  # Disabled initially
+        btns.pack_start(self.prev_btn, False, False, 0)
 
         self.shuffle_btn = Gtk.Button.new_with_mnemonic("_Shuffle")
         self.shuffle_btn.connect("clicked", self.on_shuffle)
@@ -562,7 +572,7 @@ class GGWindow(Gtk.Window):
     # Enable/disable buttons based on DB availability
 
     def enable_actions(self) -> None:
-        for b in (self.shuffle_btn, self.browser_btn, self.freetube_btn, self.copy_btn):
+        for b in (self.prev_btn, self.shuffle_btn, self.browser_btn, self.freetube_btn, self.copy_btn):
             b.set_sensitive(True)
 
     # Core actions
@@ -571,8 +581,17 @@ class GGWindow(Gtk.Window):
             return
         try:
             title, url = fetch_random(self.conn)
-            self.current_url = url
             vid = extract_video_id(url)
+            
+            # Add current video to history if it exists
+            if self.current_url and self.current_title and self.current_video_id:
+                self._add_to_history(self.current_title, self.current_url, self.current_video_id)
+            
+            # Update current video info
+            self.current_title = title
+            self.current_url = url
+            self.current_video_id = vid
+            
             ft = f"freetube://{url}" if url else ""
             self.title_lbl.set_text(title or "(No title)")
             self.url_entry.set_text(url or "")
@@ -588,6 +607,52 @@ class GGWindow(Gtk.Window):
             self.url_entry.grab_focus()
         except Exception as e:
             self._set_status(f"Error loading video: {e}")
+
+    def _add_to_history(self, title: str, url: str, video_id: str) -> None:
+        """Add video to history and update previous button state."""
+        # Remove any videos after current position (if we're not at the end)
+        if self.history_index < len(self.video_history) - 1:
+            self.video_history = self.video_history[:self.history_index + 1]
+        
+        # Add new video to history
+        self.video_history.append((title, url, video_id))
+        self.history_index = len(self.video_history) - 1
+        
+        # Limit history to last 50 videos to prevent memory issues
+        if len(self.video_history) > 50:
+            self.video_history = self.video_history[-50:]
+            self.history_index = len(self.video_history) - 1
+        
+        # Update previous button state
+        self.prev_btn.set_sensitive(len(self.video_history) > 1)
+
+    def on_previous(self, _btn: Gtk.Button) -> None:
+        """Go back to previous video in history."""
+        if self.history_index > 0:
+            self.history_index -= 1
+            title, url, video_id = self.video_history[self.history_index]
+            
+            # Update current video info
+            self.current_title = title
+            self.current_url = url
+            self.current_video_id = video_id
+            
+            ft = f"freetube://{url}" if url else ""
+            self.title_lbl.set_text(title or "(No title)")
+            self.url_entry.set_text(url or "")
+            self.id_entry.set_text(video_id)
+            self.ft_entry.set_text(ft)
+            
+            # Show loading placeholder while loading thumbnail async
+            self._set_loading_placeholder()
+            load_thumbnail_async(video_id, self._on_thumbnail_loaded)
+            
+            # Focus URL for quick copy
+            self.url_entry.select_region(0, -1)
+            self.url_entry.grab_focus()
+            
+            # Update previous button state
+            self.prev_btn.set_sensitive(self.history_index > 0)
 
     def _set_loading_placeholder(self) -> None:
         """Set a subtle loading placeholder that maintains layout."""
@@ -633,6 +698,9 @@ class GGWindow(Gtk.Window):
             return True
         elif key in ("Left", "Right", "Up", "Down", "Tab", "ISO_Left_Tab"):  # let GTK handle focus movement
             return False
+        elif key in ("p", "P"):
+            self.on_previous(self.prev_btn)
+            return True
         elif key in ("b", "B"):
             self.on_open_browser(self.browser_btn)
             return True
