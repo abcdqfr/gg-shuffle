@@ -185,7 +185,6 @@ class GGWindow(Gtk.Window):
         self.current_title: str = ""
         self.current_video_id: str = ""
         self.video_history: list = []  # List of (title, url, video_id) tuples
-        self.history_index: int = -1  # Current position in history
         self.db_update_thread: Optional[threading.Thread] = None
         self.is_updating_db: bool = False
 
@@ -610,27 +609,24 @@ class GGWindow(Gtk.Window):
 
     def _add_to_history(self, title: str, url: str, video_id: str) -> None:
         """Add video to history and update previous button state."""
-        # Remove any videos after current position (if we're not at the end)
-        if self.history_index < len(self.video_history) - 1:
-            self.video_history = self.video_history[:self.history_index + 1]
-        
-        # Add new video to history
+        # Always add to history when shuffling (this is the current video being replaced)
         self.video_history.append((title, url, video_id))
-        self.history_index = len(self.video_history) - 1
         
         # Limit history to last 50 videos to prevent memory issues
         if len(self.video_history) > 50:
             self.video_history = self.video_history[-50:]
-            self.history_index = len(self.video_history) - 1
         
-        # Update previous button state
+        # Update previous button state (enabled if we have more than 1 video)
         self.prev_btn.set_sensitive(len(self.video_history) > 1)
 
     def on_previous(self, _btn: Gtk.Button) -> None:
         """Go back to previous video in history."""
-        if self.history_index > 0:
-            self.history_index -= 1
-            title, url, video_id = self.video_history[self.history_index]
+        if len(self.video_history) > 1:
+            # Remove current video from history (it's the last one)
+            self.video_history.pop()
+            
+            # Get the previous video (now the last one in history)
+            title, url, video_id = self.video_history[-1]
             
             # Update current video info
             self.current_title = title
@@ -652,7 +648,7 @@ class GGWindow(Gtk.Window):
             self.url_entry.grab_focus()
             
             # Update previous button state
-            self.prev_btn.set_sensitive(self.history_index > 0)
+            self.prev_btn.set_sensitive(len(self.video_history) > 1)
 
     def _set_loading_placeholder(self) -> None:
         """Set a subtle loading placeholder that maintains layout."""
