@@ -5,6 +5,8 @@ __pycache__/
 # Virtual envs
 .venv/
 
+.trash/
+
 # OS
 .DS_Store
 Thumbs.db

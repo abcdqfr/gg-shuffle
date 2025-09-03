@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Minimal GTK GUI to shuffle and open Game Grumps videos (K.I.S.S.)."""
 
+import argparse
 import hashlib
 import sqlite3
+import sys
 import threading
 import time
 import urllib.request
@@ -18,6 +20,48 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib  # type: ignore
 DB_PATH = Path(__file__).parent / "gamegrumps.db"
 CACHE_DIR = Path.home() / ".cache" / "gg-shuffle" / "thumbs"
 CACHE_MAX_AGE_DAYS = 30
+
+
+def scrape_videos(channel_url: str = "https://www.youtube.com/@GameGrumps/videos", db_path: str = "gamegrumps.db") -> None:
+    """Scrape Game Grumps videos using yt-dlp and store in SQLite database."""
+    try:
+        import yt_dlp  # type: ignore
+    except ImportError:
+        print("yt-dlp is required. Install with: pipx install yt-dlp or pip install yt-dlp")
+        sys.exit(1)
+    
+    print(f"Scraping: {channel_url}")
+    
+    ydl_opts = {
+        "extract_flat": True,
+        "quiet": True,
+        "ignoreerrors": True,
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(channel_url, download=False)
+    
+    entries = [e for e in (info.get("entries") or []) if e and e.get("id")]
+    print(f"Found {len(entries)} videos")
+    
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS videos (id TEXT PRIMARY KEY, title TEXT, url TEXT)")
+    
+    added = 0
+    for e in entries:
+        vid = e["id"]
+        title = e.get("title", "Unknown")
+        url = f"https://www.youtube.com/watch?v={vid}"
+        c.execute("INSERT OR IGNORE INTO videos VALUES (?, ?, ?)", (vid, title, url))
+        added += 1
+    
+    conn.commit()
+    c.execute("SELECT COUNT(*) FROM videos")
+    total = c.fetchone()[0]
+    conn.close()
+    
+    print(f"Added {added} videos. Total in DB: {total}")
 
 
 def fetch_random(conn: sqlite3.Connection) -> Tuple[str, str]:
@@ -393,33 +437,15 @@ class GGWindow(Gtk.Window):
         
         def build_worker():
             try:
-                import subprocess
-                
-                # Run gg.sh scrape
-                script_path = Path(__file__).parent / "gg.sh"
-                if not script_path.exists():
-                    GLib.idle_add(self._on_build_error, "gg.sh script not found")
-                    return
-                
                 # Update progress
                 GLib.idle_add(self.welcome_progress.set_text, "Downloading video list...")
                 GLib.idle_add(self.welcome_progress.pulse)
                 
-                result = subprocess.run(
-                    [str(script_path), "scrape"],
-                    cwd=str(script_path.parent),
-                    capture_output=True,
-                    text=True,
-                    timeout=300  # 5 minute timeout
-                )
+                # Use pure Python scraping
+                scrape_videos(db_path=str(DB_PATH))
                 
-                if result.returncode == 0:
-                    GLib.idle_add(self._on_build_complete)
-                else:
-                    GLib.idle_add(self._on_build_error, f"Build failed: {result.stderr}")
+                GLib.idle_add(self._on_build_complete)
                     
-            except subprocess.TimeoutExpired:
-                GLib.idle_add(self._on_build_error, "Build timed out after 5 minutes")
             except Exception as e:
                 GLib.idle_add(self._on_build_error, f"Build error: {e}")
         
@@ -441,18 +467,7 @@ class GGWindow(Gtk.Window):
         self.is_updating_db = False
         self.welcome_progress.set_text("Database build complete!")
         self.welcome_progress.set_fraction(1.0)
-        self._set_status("Database build complete - restarting app...")
-        
-        # Transform the build button into a countdown display
-        self.build_db_button.set_label("✅ Database Ready!")
-        self.build_db_button.set_sensitive(False)  # Make non-interactive
-        
-        self.build_db_button.get_style_context().add_class("suggested-action")
-        self.build_db_button.set_size_request(200, 50)
-        
-        # Start countdown and auto-restart
-        self._countdown_seconds = 3
-        self._update_countdown()
+        self._set_status("Database build complete - switching to main interface...")
         
         # Reconnect to database to verify it's ready
         try:
@@ -460,45 +475,18 @@ class GGWindow(Gtk.Window):
             cursor = self.conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM videos")
             count = cursor.fetchone()[0]
-            self._set_status(f"Database ready - {count:,} videos - restarting in {self._countdown_seconds}s...")
+            self._set_status(f"Database ready - {count:,} videos available")
+            
+            # Switch to main UI after a brief delay
+            GLib.timeout_add_seconds(1, self._switch_to_main_ui)
             
         except sqlite3.Error as e:
             self._on_build_error(f"Database connection error: {e}")
 
-    def _update_countdown(self) -> bool:
-        """Update countdown display and restart when done."""
-        if self._countdown_seconds > 0:
-            self.build_db_button.set_label(f"✅ Database Ready! ({self._countdown_seconds})")
-            self._set_status(f"Database ready - restarting in {self._countdown_seconds}s...")
-            self._countdown_seconds -= 1
-            GLib.timeout_add_seconds(1, self._update_countdown)
-            return False  # Don't repeat automatically
-        else:
-            # Countdown finished, restart the app
-            self._restart_app()
-            return False
-
-    def _restart_app(self) -> None:
-        """Restart the application with database present."""
-        import subprocess
-        import sys
-        
-        self._set_status("Restarting application...")
-        
-        try:
-            # Get the current script path
-            script_path = Path(__file__).resolve()
-            
-            # Start new instance
-            subprocess.Popen([sys.executable, str(script_path)])
-            
-            # Close current instance
-            Gtk.main_quit()
-            
-        except Exception as e:
-            self._set_status(f"Restart failed: {e}")
-            # Fallback: try to switch to main UI manually
-            self._on_continue_to_app(None)
+    def _switch_to_main_ui(self) -> bool:
+        """Switch from welcome screen to main UI."""
+        self._build_main_ui()
+        return False  # Don't repeat
 
     def _on_continue_to_app(self, _widget: Gtk.Widget) -> None:
         """Fallback method for manual app switching (used if restart fails)."""
@@ -529,21 +517,9 @@ class GGWindow(Gtk.Window):
         
         def update_worker():
             try:
-                import subprocess
-                script_path = Path(__file__).parent / "gg.sh"
-                
-                result = subprocess.run(
-                    [str(script_path), "scrape"],
-                    cwd=str(script_path.parent),
-                    capture_output=True,
-                    text=True,
-                    timeout=300
-                )
-                
-                if result.returncode == 0:
-                    GLib.idle_add(self._on_update_complete)
-                else:
-                    GLib.idle_add(self._on_update_error, f"Update failed: {result.stderr}")
+                # Use pure Python scraping
+                scrape_videos(db_path=str(DB_PATH))
+                GLib.idle_add(self._on_update_complete)
                     
             except Exception as e:
                 GLib.idle_add(self._on_update_error, f"Update error: {e}")
@@ -659,10 +635,73 @@ class GGWindow(Gtk.Window):
         return False
 
 
+def cli_random(db_path: str = "gamegrumps.db", count: int = 1, mode: str = "browser") -> None:
+    """CLI random video picker."""
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    
+    c.execute("SELECT COUNT(*) FROM videos")
+    if c.fetchone()[0] == 0:
+        print("No videos in database. Run 'python3 gg-shuffle.py scrape' first.")
+        sys.exit(1)
+    
+    c.execute(f"SELECT title, url FROM videos ORDER BY RANDOM() LIMIT {count}")
+    rows = c.fetchall()
+    conn.close()
+    
+    for i, (title, url) in enumerate(rows, 1):
+        print(f"{i}. {title}\n{url}")
+        try:
+            if mode == "freetube":
+                webbrowser.open(f"freetube://{url}")
+            elif mode == "browser":
+                webbrowser.open(url)
+        except Exception:
+            pass
+
+
+def cli_tui(db_path: str = "gamegrumps.db", mode: str = "browser") -> None:
+    """CLI TUI using fzf."""
+    import subprocess
+    
+    if not subprocess.run(["which", "fzf"], capture_output=True).returncode == 0:
+        print("fzf is required for TUI. Install it (e.g., sudo apt-get install -y fzf)")
+        sys.exit(1)
+    
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("SELECT title, url FROM videos ORDER BY title ASC")
+    
+    for title, url in c.fetchall():
+        safe_title = (title or "").replace("|", "-")
+        print(f"{safe_title}|{url}")
+    conn.close()
+
+
 def main() -> None:
-    win = GGWindow()
-    win.show_all()
-    Gtk.main()
+    parser = argparse.ArgumentParser(description="Game Grumps Episode Randomizer")
+    parser.add_argument("command", nargs="?", choices=["scrape", "random", "tui"], 
+                       help="Command to run (default: GUI)")
+    parser.add_argument("--db", default="gamegrumps.db", help="Database path")
+    parser.add_argument("-n", type=int, default=1, help="Number of random videos")
+    parser.add_argument("--freetube", action="store_true", help="Open with FreeTube")
+    parser.add_argument("--browser", action="store_true", help="Open with browser")
+    
+    args = parser.parse_args()
+    
+    if args.command == "scrape":
+        scrape_videos(db_path=args.db)
+    elif args.command == "random":
+        mode = "freetube" if args.freetube else "browser"
+        cli_random(args.db, args.n, mode)
+    elif args.command == "tui":
+        mode = "freetube" if args.freetube else "browser"
+        cli_tui(args.db, mode)
+    else:
+        # GUI mode
+        win = GGWindow()
+        win.show_all()
+        Gtk.main()
 
 
 if __name__ == "__main__":

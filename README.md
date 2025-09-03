@@ -20,17 +20,15 @@
 
 1. **Clone** - `git clone https://github.com/abcdqfr/gg-shuffle`
 2. **Setup** - `cd gg-shuffle && pipx install yt-dlp`
-3. **Build DB** - `./gg.sh scrape` (scrapes all Game Grumps videos)
-4. **Launch GUI** - `python3 gg-shuffle.py`
-5. **Shuffle** - Press Enter/Space for random episodes
-6. **Enjoy** - Let the chaos decide your entertainment!
+3. **Launch** - `python3 gg-shuffle.py` (auto-builds database on first run)
+4. **Shuffle** - Press Enter/Space for random episodes
+5. **Enjoy** - Let the chaos decide your entertainment!
 
 ## 🏗️ Project Structure
 
 ```
 gg-shuffle/
-├── gg-shuffle.py                   # Beautiful GTK GUI with thumbnails
-├── gg.sh                           # Monolithic CLI script (scrape/random/tui)
+├── gg-shuffle.py                   # Pure Python app (GUI + CLI + scraping)
 ├── gamegrumps.db                   # SQLite database of videos (9,206 episodes)
 ├── requirements.txt                # Python dependencies
 ├── setup.py                        # Simple package setup
@@ -78,13 +76,13 @@ python3 gg-shuffle.py
 python3 gg-shuffle.py
 
 # Build/refresh the video database
-./gg.sh scrape
+python3 gg-shuffle.py scrape
 
 # Pick random videos from CLI
-./gg.sh random
+python3 gg-shuffle.py random
 
 # Interactive TUI (if you prefer terminal)
-./gg.sh tui
+python3 gg-shuffle.py tui
 ```
 
 ## 🎮 Usage
@@ -105,9 +103,9 @@ python3 gg-shuffle.py
 - **Arrow Keys** - Navigate between buttons and fields
 
 ### CLI Mode
-1. **Build database** - `./gg.sh scrape`
-2. **Random pick** - `./gg.sh random` (opens in browser)
-3. **Interactive** - `./gg.sh tui` (fuzzy search interface)
+1. **Build database** - `python3 gg-shuffle.py scrape`
+2. **Random pick** - `python3 gg-shuffle.py random` (opens in browser)
+3. **Interactive** - `python3 gg-shuffle.py tui` (fuzzy search interface)
 
 ---
 
@@ -116,38 +114,37 @@ python3 gg-shuffle.py
 - sqlite3 (usually preinstalled)
 - Optional TUI: fzf + xdg-open
 
-### Monolithic CLI
-All actions are via one script: `gg.sh`.
+### Pure Python CLI
+All actions are via one Python script: `gg-shuffle.py`.
 
 - Scrape (build/refresh DB):
 ```sh
-./gg.sh scrape                    # default channel, DB: gamegrumps.db
-./gg.sh scrape --db my.db         # custom DB path
-./gg.sh scrape --channel URL      # custom channel URL
+python3 gg-shuffle.py scrape                    # default channel, DB: gamegrumps.db
+python3 gg-shuffle.py scrape --db my.db         # custom DB path
 ```
 
 - Random picks:
 ```sh
-./gg.sh random                    # open 1 in browser
-./gg.sh random -n 5 --print       # print 5 random picks
-./gg.sh random --freetube         # open with FreeTube (freetube://)
-./gg.sh random --db my.db         # use custom DB
+python3 gg-shuffle.py random                    # open 1 in browser
+python3 gg-shuffle.py random -n 5               # pick 5 random videos
+python3 gg-shuffle.py random --freetube         # open with FreeTube (freetube://)
+python3 gg-shuffle.py random --db my.db         # use custom DB
 ```
 
 - Interactive TUI (requires fzf):
 ```sh
-./gg.sh tui                       # search, press Enter to open
-./gg.sh tui --db my.db
+python3 gg-shuffle.py tui                       # search, press Enter to open
+python3 gg-shuffle.py tui --db my.db
 ```
 
 ### Direct Script Usage
 ```sh
-./gg.sh scrape    # Build/refresh database
-./gg.sh random    # Pick random video
-./gg.sh tui       # Interactive search
+python3 gg-shuffle.py scrape    # Build/refresh database
+python3 gg-shuffle.py random    # Pick random video
+python3 gg-shuffle.py tui       # Interactive search
 ```
 
 ### Database
 - File: `gamegrumps.db`
 - Table: `videos(id TEXT PRIMARY KEY, title TEXT, url TEXT)`
-- Refresh by re-running `./gg.sh scrape`.
+- Refresh by re-running `python3 gg-shuffle.py scrape`.
