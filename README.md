@@ -1,12 +1,12 @@
 # 🎮 Game Grumps Episode Randomizer
 
-**Your ultimate companion for navigating 9,300+ Game Grumps episodes!**
+**Don't get stumped choosing a random Game Grumps episode again!**
 
 ![GG Shuffle GUI](Screenshot.png)
 
 *Beautiful dark theme GTK interface with instant thumbnail loading and smooth navigation*
 
-## 🌟 In Memory of randomgrump.com
+## 🌟 In Loving Memory of randomgrump.com
 
 This project was inspired by and serves as a modern replacement for **randomgrump.com** - the beloved website that helped Game Grumps fans discover random episodes for years. While the original site is no longer available, we've created something else:
 
