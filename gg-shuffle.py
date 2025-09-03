@@ -109,12 +109,26 @@ def scrape_videos(channel_url: str = "https://www.youtube.com/@GameGrumps/videos
 
 
 def fetch_random(conn: sqlite3.Connection) -> Tuple[str, str, str, int, int, str]:
-    """Fetch random video with enhanced metadata."""
+    """Fetch random video with enhanced metadata (backward compatible)."""
     cur = conn.cursor()
-    cur.execute("SELECT title, url, description, view_count, duration, upload_date FROM videos ORDER BY RANDOM() LIMIT 1")
-    row = cur.fetchone()
-    if row:
-        return (row[0], row[1], row[2] or "", row[3] or 0, row[4] or 0, row[5] or "")
+    
+    # Check if new columns exist
+    cur.execute("PRAGMA table_info(videos)")
+    columns = [row[1] for row in cur.fetchall()]
+    
+    if all(col in columns for col in ['description', 'view_count', 'duration', 'upload_date']):
+        # New schema - get all data
+        cur.execute("SELECT title, url, description, view_count, duration, upload_date FROM videos ORDER BY RANDOM() LIMIT 1")
+        row = cur.fetchone()
+        if row:
+            return (row[0], row[1], row[2] or "", row[3] or 0, row[4] or 0, row[5] or "")
+    else:
+        # Old schema - get basic data only
+        cur.execute("SELECT title, url FROM videos ORDER BY RANDOM() LIMIT 1")
+        row = cur.fetchone()
+        if row:
+            return (row[0], row[1], "", 0, 0, "")
+    
     return ("Unknown", "", "", 0, 0, "")
 
 
@@ -723,12 +737,26 @@ class GGWindow(Gtk.Window):
             
             # Look up the previous video in the database
             cursor = self.conn.cursor()
-            cursor.execute("SELECT title, url, description, view_count, duration, upload_date FROM videos WHERE id = ?", (previous_video_id,))
-            result = cursor.fetchone()
+            
+            # Check if new columns exist
+            cursor.execute("PRAGMA table_info(videos)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if all(col in columns for col in ['description', 'view_count', 'duration', 'upload_date']):
+                # New schema - get all data
+                cursor.execute("SELECT title, url, description, view_count, duration, upload_date FROM videos WHERE id = ?", (previous_video_id,))
+                result = cursor.fetchone()
+                if result:
+                    title, url, description, view_count, duration, upload_date = result
+            else:
+                # Old schema - get basic data only
+                cursor.execute("SELECT title, url FROM videos WHERE id = ?", (previous_video_id,))
+                result = cursor.fetchone()
+                if result:
+                    title, url = result
+                    description, view_count, duration, upload_date = "", 0, 0, ""
             
             if result:
-                title, url, description, view_count, duration, upload_date = result
-                
                 # Update current video info
                 self.current_title = title
                 self.current_url = url
