@@ -13,9 +13,6 @@ Thumbs.db
 
 # Logs/DB
 *.log
-*.sqlite
-*.sqlite3
-*.db
 
 # Python tooling
 *.egg-info/
