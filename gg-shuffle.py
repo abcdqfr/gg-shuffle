@@ -184,7 +184,7 @@ class GGWindow(Gtk.Window):
         self.current_url: str = ""
         self.current_title: str = ""
         self.current_video_id: str = ""
-        self.video_history: list = []  # List of (title, url, video_id) tuples
+        self.previous_video_id: str = ""  # Just track the previous video ID
         self.db_update_thread: Optional[threading.Thread] = None
         self.is_updating_db: bool = False
 
@@ -582,9 +582,9 @@ class GGWindow(Gtk.Window):
             title, url = fetch_random(self.conn)
             vid = extract_video_id(url)
             
-            # Add current video to history if it exists
-            if self.current_url and self.current_title and self.current_video_id:
-                self._add_to_history(self.current_title, self.current_url, self.current_video_id)
+            # Store current video as previous before updating
+            if self.current_video_id:
+                self.previous_video_id = self.current_video_id
             
             # Update current video info
             self.current_title = title
@@ -604,51 +604,51 @@ class GGWindow(Gtk.Window):
             # Focus URL for quick copy
             self.url_entry.select_region(0, -1)
             self.url_entry.grab_focus()
+            
+            # Update previous button state
+            self.prev_btn.set_sensitive(bool(self.previous_video_id))
         except Exception as e:
             self._set_status(f"Error loading video: {e}")
 
-    def _add_to_history(self, title: str, url: str, video_id: str) -> None:
-        """Add video to history and update previous button state."""
-        # Always add to history when shuffling (this is the current video being replaced)
-        self.video_history.append((title, url, video_id))
-        
-        # Limit history to last 50 videos to prevent memory issues
-        if len(self.video_history) > 50:
-            self.video_history = self.video_history[-50:]
-        
-        # Update previous button state (enabled if we have more than 1 video)
-        self.prev_btn.set_sensitive(len(self.video_history) > 1)
-
     def on_previous(self, _btn: Gtk.Button) -> None:
-        """Go back to previous video in history."""
-        if len(self.video_history) > 1:
-            # Remove current video from history (it's the last one)
-            self.video_history.pop()
+        """Go back to previous video."""
+        if not self.previous_video_id or not self.conn:
+            return
             
-            # Get the previous video (now the last one in history)
-            title, url, video_id = self.video_history[-1]
+        try:
+            # Look up the previous video in the database
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT title, url FROM videos WHERE id = ?", (self.previous_video_id,))
+            result = cursor.fetchone()
             
-            # Update current video info
-            self.current_title = title
-            self.current_url = url
-            self.current_video_id = video_id
-            
-            ft = f"freetube://{url}" if url else ""
-            self.title_lbl.set_text(title or "(No title)")
-            self.url_entry.set_text(url or "")
-            self.id_entry.set_text(video_id)
-            self.ft_entry.set_text(ft)
-            
-            # Show loading placeholder while loading thumbnail async
-            self._set_loading_placeholder()
-            load_thumbnail_async(video_id, self._on_thumbnail_loaded)
-            
-            # Focus URL for quick copy
-            self.url_entry.select_region(0, -1)
-            self.url_entry.grab_focus()
-            
-            # Update previous button state
-            self.prev_btn.set_sensitive(len(self.video_history) > 1)
+            if result:
+                title, url = result
+                
+                # Update current video info
+                self.current_title = title
+                self.current_url = url
+                self.current_video_id = self.previous_video_id
+                
+                ft = f"freetube://{url}" if url else ""
+                self.title_lbl.set_text(title or "(No title)")
+                self.url_entry.set_text(url or "")
+                self.id_entry.set_text(self.previous_video_id)
+                self.ft_entry.set_text(ft)
+                
+                # Show loading placeholder while loading thumbnail async
+                self._set_loading_placeholder()
+                load_thumbnail_async(self.previous_video_id, self._on_thumbnail_loaded)
+                
+                # Focus URL for quick copy
+                self.url_entry.select_region(0, -1)
+                self.url_entry.grab_focus()
+                
+                # Clear previous video ID (can't go back further)
+                self.previous_video_id = ""
+                self.prev_btn.set_sensitive(False)
+                
+        except Exception as e:
+            self._set_status(f"Error loading previous video: {e}")
 
     def _set_loading_placeholder(self) -> None:
         """Set a subtle loading placeholder that maintains layout."""
