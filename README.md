@@ -8,9 +8,8 @@
 
 ## 🌟 In Memory of randomgrump.com
 
-This project was inspired by and serves as a modern replacement for **randomgrump.com** - the beloved website that helped Game Grumps fans discover random episodes for years. While the original site is no longer available, we've created something even better:
+This project was inspired by and serves as a modern replacement for **randomgrump.com** - the beloved website that helped Game Grumps fans discover random episodes for years. While the original site is no longer available, we've created something else:
 
-- **Offline-first** - No internet required for browsing
 - **Native desktop app** - Beautiful GTK interface
 - **Enhanced features** - Thumbnails, descriptions, view counts, and more
 - **Cross-platform** - Works on Linux, macOS, and Windows (via WSL)
@@ -101,9 +100,6 @@ cd gg-shuffle
 # Install dependencies (only need yt-dlp for Indexing)
 pipx install yt-dlp
 
-# Build the video database
-./gg.sh index
-
 # Launch the GUI
 python3 gg-shuffle.py
 ```
@@ -111,9 +107,6 @@ python3 gg-shuffle.py
 ## 🚀 Development
 
 ```bash
-# Launch the beautiful GTK GUI
-python3 gg-shuffle.py
-
 # Build/refresh the video database
 python3 gg-shuffle.py index
 
@@ -128,13 +121,13 @@ python3 gg-shuffle.py tui
 
 ### GTK GUI (Recommended)
 1. **Launch** - `python3 gg-shuffle.py`
-2. **Shuffle** - Press Enter/Space or click Shuffle button
-3. **Navigate** - Use arrow keys to move between buttons
-4. **Actions** - Open in browser (B), FreeTube (F), copy URL (C)
-5. **Exit** - Press Q/Esc or click Exit button
+2. **Navigate** - Use arrow keys to move between buttons
+3. **Actions** - Previous (P), Shuffle (S), Open in browser (B), FreeTube (F), copy URL (C)
+4. **Exit** - Press Q/Esc or click Exit button
 
 ### Keyboard Shortcuts
-- **Enter/Space** - Shuffle to new random video
+- **P** - Navigate back to previous video
+- **S** - Shuffle to new random video
 - **B** - Open current video in browser
 - **F** - Open current video in FreeTube
 - **C** - Copy video URL to clipboard
