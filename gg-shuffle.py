@@ -432,6 +432,7 @@ class GGWindow(Gtk.Window):
             
         self.is_updating_db = True
         self.build_db_button.set_sensitive(False)
+        self.build_db_button.set_label("Building Database...")
         self.welcome_progress.set_text("Starting database build...")
         self._set_status("Building database - this may take a few minutes...")
         
@@ -467,7 +468,7 @@ class GGWindow(Gtk.Window):
         self.is_updating_db = False
         self.welcome_progress.set_text("Database build complete!")
         self.welcome_progress.set_fraction(1.0)
-        self._set_status("Database build complete - switching to main interface...")
+        self._set_status("Database build complete - please restart the app")
         
         # Reconnect to database to verify it's ready
         try:
@@ -475,22 +476,23 @@ class GGWindow(Gtk.Window):
             cursor = self.conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM videos")
             count = cursor.fetchone()[0]
-            self._set_status(f"Database ready - {count:,} videos available")
+            self._set_status(f"Database ready - {count:,} videos available - please restart the app")
             
-            # Transform the build button into a continue button
-            self.build_db_button.set_label("✅ Continue to App")
-            self.build_db_button.set_sensitive(True)
+            # Hide the button and show restart message
+            self.build_db_button.hide()
             
-            # Disconnect the old build handler and connect the continue handler
-            self.build_db_button.disconnect_by_func(self._on_build_database)
-            self.build_db_button.connect("clicked", self._on_continue_to_app)
+            # Add restart message
+            restart_label = Gtk.Label()
+            restart_label.set_markup("<big><b>✅ Database Ready!</b></big>\n\nPlease restart the app to continue.")
+            restart_label.set_halign(Gtk.Align.CENTER)
+            restart_label.set_valign(Gtk.Align.CENTER)
+            restart_label.get_style_context().add_class("gg-title")
             
-            self.build_db_button.get_style_context().add_class("suggested-action")
-            self.build_db_button.set_can_default(True)
-            self.set_default(self.build_db_button)
-            
-            # Make button larger and more prominent
-            self.build_db_button.set_size_request(200, 50)
+            # Add to the welcome box
+            welcome_box = self.content_stack.get_child_by_name("welcome")
+            if welcome_box:
+                welcome_box.pack_start(restart_label, False, False, 0)
+                welcome_box.show_all()
             
         except sqlite3.Error as e:
             self._on_build_error(f"Database connection error: {e}")
