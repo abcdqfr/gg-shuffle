@@ -184,7 +184,7 @@ class GGWindow(Gtk.Window):
         self.current_url: str = ""
         self.current_title: str = ""
         self.current_video_id: str = ""
-        self.previous_video_id: str = ""  # Just track the previous video ID
+        self.previous_video_ids: list = []  # Stack of previous video IDs (max 50)
         self.db_update_thread: Optional[threading.Thread] = None
         self.is_updating_db: bool = False
 
@@ -582,9 +582,12 @@ class GGWindow(Gtk.Window):
             title, url = fetch_random(self.conn)
             vid = extract_video_id(url)
             
-            # Store current video as previous before updating
+            # Add current video to previous stack before updating
             if self.current_video_id:
-                self.previous_video_id = self.current_video_id
+                self.previous_video_ids.append(self.current_video_id)
+                # Limit to 50 videos to prevent memory issues
+                if len(self.previous_video_ids) > 50:
+                    self.previous_video_ids = self.previous_video_ids[-50:]
             
             # Update current video info
             self.current_title = title
@@ -606,19 +609,22 @@ class GGWindow(Gtk.Window):
             self.url_entry.grab_focus()
             
             # Update previous button state
-            self.prev_btn.set_sensitive(bool(self.previous_video_id))
+            self.prev_btn.set_sensitive(len(self.previous_video_ids) > 0)
         except Exception as e:
             self._set_status(f"Error loading video: {e}")
 
     def on_previous(self, _btn: Gtk.Button) -> None:
         """Go back to previous video."""
-        if not self.previous_video_id or not self.conn:
+        if not self.previous_video_ids or not self.conn:
             return
             
         try:
+            # Get the most recent previous video ID
+            previous_video_id = self.previous_video_ids.pop()
+            
             # Look up the previous video in the database
             cursor = self.conn.cursor()
-            cursor.execute("SELECT title, url FROM videos WHERE id = ?", (self.previous_video_id,))
+            cursor.execute("SELECT title, url FROM videos WHERE id = ?", (previous_video_id,))
             result = cursor.fetchone()
             
             if result:
@@ -627,25 +633,24 @@ class GGWindow(Gtk.Window):
                 # Update current video info
                 self.current_title = title
                 self.current_url = url
-                self.current_video_id = self.previous_video_id
+                self.current_video_id = previous_video_id
                 
                 ft = f"freetube://{url}" if url else ""
                 self.title_lbl.set_text(title or "(No title)")
                 self.url_entry.set_text(url or "")
-                self.id_entry.set_text(self.previous_video_id)
+                self.id_entry.set_text(previous_video_id)
                 self.ft_entry.set_text(ft)
                 
                 # Show loading placeholder while loading thumbnail async
                 self._set_loading_placeholder()
-                load_thumbnail_async(self.previous_video_id, self._on_thumbnail_loaded)
+                load_thumbnail_async(previous_video_id, self._on_thumbnail_loaded)
                 
                 # Focus URL for quick copy
                 self.url_entry.select_region(0, -1)
                 self.url_entry.grab_focus()
                 
-                # Clear previous video ID (can't go back further)
-                self.previous_video_id = ""
-                self.prev_btn.set_sensitive(False)
+                # Update previous button state
+                self.prev_btn.set_sensitive(len(self.previous_video_ids) > 0)
                 
         except Exception as e:
             self._set_status(f"Error loading previous video: {e}")
