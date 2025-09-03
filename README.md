@@ -21,7 +21,7 @@
 1. **Clone** - `git clone https://github.com/abcdqfr/gg-shuffle`
 2. **Setup** - `cd gg-shuffle && pipx install yt-dlp`
 3. **Build DB** - `./gg.sh scrape` (scrapes all Game Grumps videos)
-4. **Launch GUI** - `python3 gg_gui.py`
+4. **Launch GUI** - `python3 gg-shuffle.py`
 5. **Shuffle** - Press Enter/Space for random episodes
 6. **Enjoy** - Let the chaos decide your entertainment!
 
@@ -29,9 +29,11 @@
 
 ```
 gg-shuffle/
-├── gg_gui.py                       # Beautiful GTK GUI with thumbnails
+├── gg-shuffle.py                   # Beautiful GTK GUI with thumbnails
 ├── gg.sh                           # Monolithic CLI script (scrape/random/tui)
-├── gamegrumps.db                  # SQLite database of videos
+├── gamegrumps.db                   # SQLite database of videos (9,206 episodes)
+├── requirements.txt                # Python dependencies
+├── setup.py                        # Simple package setup
 └── README.md                       # This file
 ```
 
@@ -66,14 +68,14 @@ pipx install yt-dlp
 ./gg.sh scrape
 
 # Launch the GUI
-python3 gg_gui.py
+python3 gg-shuffle.py
 ```
 
 ## 🚀 Development
 
 ```bash
 # Launch the beautiful GTK GUI
-python3 gg_gui.py
+python3 gg-shuffle.py
 
 # Build/refresh the video database
 ./gg.sh scrape
@@ -88,7 +90,7 @@ python3 gg_gui.py
 ## 🎮 Usage
 
 ### GTK GUI (Recommended)
-1. **Launch** - `python3 gg_gui.py`
+1. **Launch** - `python3 gg-shuffle.py`
 2. **Shuffle** - Press Enter/Space or click Shuffle button
 3. **Navigate** - Use arrow keys to move between buttons
 4. **Actions** - Open in browser (B), FreeTube (F), copy URL (C)

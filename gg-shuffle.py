@@ -137,9 +137,7 @@ class GGWindow(Gtk.Window):
         self._apply_css()
 
         # State tracking
-        self.current_title: str = ""
         self.current_url: str = ""
-        self.current_video_id: str = ""
         self.db_update_thread: Optional[threading.Thread] = None
         self.is_updating_db: bool = False
 
@@ -398,7 +396,7 @@ class GGWindow(Gtk.Window):
         self.status_bar.remove_all(self.status_context_id)
         self.status_bar.push(self.status_context_id, message)
 
-    def _on_build_database(self, widget: Gtk.Widget) -> None:
+    def _on_build_database(self, _widget: Gtk.Widget) -> None:
         """Start building database in background thread."""
         if self.is_updating_db:
             return
@@ -411,7 +409,6 @@ class GGWindow(Gtk.Window):
         def build_worker():
             try:
                 import subprocess
-                import os
                 
                 # Run gg.sh scrape
                 script_path = Path(__file__).parent / "gg.sh"
@@ -490,7 +487,7 @@ class GGWindow(Gtk.Window):
         except sqlite3.Error as e:
             self._on_build_error(f"Database connection error: {e}")
 
-    def _on_continue_to_app(self, widget: Gtk.Widget) -> None:
+    def _on_continue_to_app(self, _widget: Gtk.Widget) -> None:
         """Manually continue to main app."""
         print("DEBUG: _on_continue_to_app called!")  # Debug log
         self._set_status("Switching to main app...")
@@ -523,7 +520,7 @@ class GGWindow(Gtk.Window):
         
         # Add a test button
         test_btn = Gtk.Button.new_with_mnemonic("_Test Button")
-        test_btn.connect("clicked", lambda w: print("DEBUG: Test button clicked!"))
+        test_btn.connect("clicked", lambda _w: print("DEBUG: Test button clicked!"))
         test_box.pack_start(test_btn, False, False, 0)
         
         # Add to stack
@@ -551,8 +548,7 @@ class GGWindow(Gtk.Window):
         print(f"DEBUG: Stack has {len(self.content_stack.get_children())} children")
         for i, child in enumerate(self.content_stack.get_children()):
             name = self.content_stack.child_get_property(child, "name")
-            visible = self.content_stack.child_get_property(child, "visible")
-            print(f"DEBUG: Child {i}: name='{name}', visible={visible}")
+            print(f"DEBUG: Child {i}: name='{name}'")
         
         # Try to force the window to update
         print("DEBUG: Forcing window update...")
@@ -575,7 +571,7 @@ class GGWindow(Gtk.Window):
 
 
 
-    def _on_update_database(self, widget: Gtk.Widget) -> None:
+    def _on_update_database(self, _widget: Gtk.Widget) -> None:
         """Update database in background."""
         if self.is_updating_db:
             return
@@ -628,9 +624,6 @@ class GGWindow(Gtk.Window):
         self._set_status(f"Update failed: {error_msg}")
 
     # Enable/disable buttons based on DB availability
-    def disable_actions(self) -> None:
-        for b in (self.shuffle_btn, self.browser_btn, self.freetube_btn, self.copy_btn):
-            b.set_sensitive(False)
 
     def enable_actions(self) -> None:
         for b in (self.shuffle_btn, self.browser_btn, self.freetube_btn, self.copy_btn):
@@ -646,9 +639,8 @@ class GGWindow(Gtk.Window):
             print("DEBUG: Fetching random video...")  # Debug log
             title, url = fetch_random(self.conn)
             print(f"DEBUG: Got video - Title: {title[:50]}...")  # Debug log
-            self.current_title, self.current_url = title, url
+            self.current_url = url
             vid = extract_video_id(url)
-            self.current_video_id = vid
             ft = f"freetube://{url}" if url else ""
             self.title_lbl.set_text(title or "(No title)")
             self.url_entry.set_text(url or "")

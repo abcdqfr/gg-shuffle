@@ -1,5 +1,3 @@
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
-pillow>=10.0.0
-tkinter-tooltip>=2.0.0
+# Core dependencies for gg-shuffle
+PyGObject>=3.42.0  # GTK3 bindings for GUI
+yt-dlp>=2023.7.6   # YouTube video scraping
