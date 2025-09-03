@@ -32,29 +32,73 @@ def scrape_videos(channel_url: str = "https://www.youtube.com/@GameGrumps/videos
     
     print(f"Scraping: {channel_url}")
     
-    ydl_opts = {
+    # First pass: get video list (fast)
+    ydl_opts_flat = {
         "extract_flat": True,
         "quiet": True,
         "ignoreerrors": True,
     }
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts_flat) as ydl:
         info = ydl.extract_info(channel_url, download=False)
     
     entries = [e for e in (info.get("entries") or []) if e and e.get("id")]
     print(f"Found {len(entries)} videos")
     
+    # Setup database with enhanced schema
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS videos (id TEXT PRIMARY KEY, title TEXT, url TEXT)")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS videos (
+            id TEXT PRIMARY KEY, 
+            title TEXT, 
+            url TEXT,
+            description TEXT,
+            view_count INTEGER,
+            duration INTEGER,
+            upload_date TEXT
+        )
+    """)
+    
+    # Second pass: get detailed info for each video (slower but more data)
+    ydl_opts_detailed = {
+        "quiet": True,
+        "ignoreerrors": True,
+        "no_warnings": True,
+    }
     
     added = 0
-    for e in entries:
+    for i, e in enumerate(entries):
         vid = e["id"]
         title = e.get("title", "Unknown")
         url = f"https://www.youtube.com/watch?v={vid}"
-        c.execute("INSERT OR IGNORE INTO videos VALUES (?, ?, ?)", (vid, title, url))
+        
+        # Try to get detailed info
+        description = ""
+        view_count = 0
+        duration = 0
+        upload_date = ""
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts_detailed) as ydl:
+                detailed_info = ydl.extract_info(url, download=False)
+                if detailed_info:
+                    description = detailed_info.get("description", "")[:500]  # Limit description length
+                    view_count = detailed_info.get("view_count", 0) or 0
+                    duration = detailed_info.get("duration", 0) or 0
+                    upload_date = detailed_info.get("upload_date", "")
+        except Exception:
+            # If detailed extraction fails, continue with basic info
+            pass
+        
+        c.execute("""
+            INSERT OR REPLACE INTO videos 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (vid, title, url, description, view_count, duration, upload_date))
         added += 1
+        
+        if (i + 1) % 100 == 0:
+            print(f"Processed {i + 1}/{len(entries)} videos...")
     
     conn.commit()
     c.execute("SELECT COUNT(*) FROM videos")
@@ -64,11 +108,14 @@ def scrape_videos(channel_url: str = "https://www.youtube.com/@GameGrumps/videos
     print(f"Added {added} videos. Total in DB: {total}")
 
 
-def fetch_random(conn: sqlite3.Connection) -> Tuple[str, str]:
+def fetch_random(conn: sqlite3.Connection) -> Tuple[str, str, str, int, int, str]:
+    """Fetch random video with enhanced metadata."""
     cur = conn.cursor()
-    cur.execute("SELECT title, url FROM videos ORDER BY RANDOM() LIMIT 1")
+    cur.execute("SELECT title, url, description, view_count, duration, upload_date FROM videos ORDER BY RANDOM() LIMIT 1")
     row = cur.fetchone()
-    return (row[0], row[1]) if row else ("", "")
+    if row:
+        return (row[0], row[1], row[2] or "", row[3] or 0, row[4] or 0, row[5] or "")
+    return ("Unknown", "", "", 0, 0, "")
 
 
 def extract_video_id(url: str) -> str:
@@ -322,13 +369,28 @@ class GGWindow(Gtk.Window):
         details = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         content.pack_start(details, True, True, 0)
 
-        # Title label (selectable, wrapped)
+        # Title label (larger, marquee scrolling, no wrap)
         self.title_lbl = Gtk.Label()
         self.title_lbl.set_xalign(0.0)
-        self.title_lbl.set_line_wrap(True)
+        self.title_lbl.set_line_wrap(False)  # No wrapping - use marquee instead
+        self.title_lbl.set_ellipsize(3)  # Pango.EllipsizeMode.END
         self.title_lbl.set_selectable(True)
         self.title_lbl.get_style_context().add_class("gg-title")
         details.pack_start(self.title_lbl, False, False, 0)
+        
+        # Description label (smaller, wrapped)
+        self.desc_lbl = Gtk.Label()
+        self.desc_lbl.set_xalign(0.0)
+        self.desc_lbl.set_line_wrap(True)
+        self.desc_lbl.set_selectable(True)
+        self.desc_lbl.get_style_context().add_class("gg-description")
+        details.pack_start(self.desc_lbl, False, False, 0)
+        
+        # Stats row (view count, duration, upload date)
+        self.stats_lbl = Gtk.Label()
+        self.stats_lbl.set_xalign(0.0)
+        self.stats_lbl.get_style_context().add_class("gg-stats")
+        details.pack_start(self.stats_lbl, False, False, 0)
 
         # URL entry (read-only, selectable)
         self.url_entry = Gtk.Entry()
@@ -420,7 +482,9 @@ class GGWindow(Gtk.Window):
         button:hover { background: #34373c; }
         .suggested-action { background: #007acc; border-color: #007acc; }
         .suggested-action:hover { background: #0085d1; }
-        .gg-title { font-weight: 600; font-size: 16px; }
+        .gg-title { font-weight: 600; font-size: 20px; color: #ffffff; }
+        .gg-description { font-size: 14px; color: #b9bbbe; margin-top: 8px; }
+        .gg-stats { font-size: 12px; color: #8e9297; margin-top: 4px; }
         .gg-status { background: #2b2d31; color: #e6e8eb; border-top: 1px solid #3a3d42; }
         """
         provider = Gtk.CssProvider()
@@ -579,7 +643,7 @@ class GGWindow(Gtk.Window):
         if not self.conn:
             return
         try:
-            title, url = fetch_random(self.conn)
+            title, url, description, view_count, duration, upload_date = fetch_random(self.conn)
             vid = extract_video_id(url)
             
             # Add current video to previous stack before updating
@@ -599,6 +663,41 @@ class GGWindow(Gtk.Window):
             self.url_entry.set_text(url or "")
             self.id_entry.set_text(vid)
             self.ft_entry.set_text(ft)
+            
+            # Update description
+            desc_text = description or "No description available"
+            self.desc_lbl.set_text(desc_text)
+            
+            # Update stats
+            stats_parts = []
+            if view_count > 0:
+                if view_count >= 1000000:
+                    stats_parts.append(f"{view_count/1000000:.1f}M views")
+                elif view_count >= 1000:
+                    stats_parts.append(f"{view_count/1000:.1f}K views")
+                else:
+                    stats_parts.append(f"{view_count:,} views")
+            
+            if duration > 0:
+                hours = duration // 3600
+                minutes = (duration % 3600) // 60
+                if hours > 0:
+                    stats_parts.append(f"{hours}h {minutes}m")
+                else:
+                    stats_parts.append(f"{minutes}m")
+            
+            if upload_date:
+                try:
+                    # Format YYYYMMDD to readable date
+                    year = upload_date[:4]
+                    month = upload_date[4:6]
+                    day = upload_date[6:8]
+                    stats_parts.append(f"{year}-{month}-{day}")
+                except:
+                    pass
+            
+            stats_text = " • ".join(stats_parts) if stats_parts else "No stats available"
+            self.stats_lbl.set_text(stats_text)
             
             # Show loading placeholder while loading thumbnail async
             self._set_loading_placeholder()
@@ -624,11 +723,11 @@ class GGWindow(Gtk.Window):
             
             # Look up the previous video in the database
             cursor = self.conn.cursor()
-            cursor.execute("SELECT title, url FROM videos WHERE id = ?", (previous_video_id,))
+            cursor.execute("SELECT title, url, description, view_count, duration, upload_date FROM videos WHERE id = ?", (previous_video_id,))
             result = cursor.fetchone()
             
             if result:
-                title, url = result
+                title, url, description, view_count, duration, upload_date = result
                 
                 # Update current video info
                 self.current_title = title
@@ -640,6 +739,41 @@ class GGWindow(Gtk.Window):
                 self.url_entry.set_text(url or "")
                 self.id_entry.set_text(previous_video_id)
                 self.ft_entry.set_text(ft)
+                
+                # Update description
+                desc_text = description or "No description available"
+                self.desc_lbl.set_text(desc_text)
+                
+                # Update stats
+                stats_parts = []
+                if view_count > 0:
+                    if view_count >= 1000000:
+                        stats_parts.append(f"{view_count/1000000:.1f}M views")
+                    elif view_count >= 1000:
+                        stats_parts.append(f"{view_count/1000:.1f}K views")
+                    else:
+                        stats_parts.append(f"{view_count:,} views")
+                
+                if duration > 0:
+                    hours = duration // 3600
+                    minutes = (duration % 3600) // 60
+                    if hours > 0:
+                        stats_parts.append(f"{hours}h {minutes}m")
+                    else:
+                        stats_parts.append(f"{minutes}m")
+                
+                if upload_date:
+                    try:
+                        # Format YYYYMMDD to readable date
+                        year = upload_date[:4]
+                        month = upload_date[4:6]
+                        day = upload_date[6:8]
+                        stats_parts.append(f"{year}-{month}-{day}")
+                    except:
+                        pass
+                
+                stats_text = " • ".join(stats_parts) if stats_parts else "No stats available"
+                self.stats_lbl.set_text(stats_text)
                 
                 # Show loading placeholder while loading thumbnail async
                 self._set_loading_placeholder()
