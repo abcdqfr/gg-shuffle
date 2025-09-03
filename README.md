@@ -2,7 +2,7 @@
 
 **Your ultimate companion for navigating 9,300+ Game Grumps episodes!**
 
-![GG Shuffle GUI](Screenshot%20from%202025-09-01%2001-03-47.png)
+![GG Shuffle GUI](Screenshot.png)
 
 *Beautiful dark theme GTK interface with instant thumbnail loading and smooth navigation*
 
