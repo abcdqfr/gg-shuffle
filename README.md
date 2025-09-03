@@ -1,4 +1,4 @@
-# 🎮 Game Grumps Episode Randomizer
+# 🎮 Game Grumps - Shuffle
 
 **Don't get stumped choosing a random Game Grumps episode again!**
 
