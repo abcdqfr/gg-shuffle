@@ -22,83 +22,41 @@ CACHE_DIR = Path.home() / ".cache" / "gg-shuffle" / "thumbs"
 CACHE_MAX_AGE_DAYS = 30
 
 
-def scrape_videos(channel_url: str = "https://www.youtube.com/@GameGrumps/videos", db_path: str = "gamegrumps.db") -> None:
-    """Scrape Game Grumps videos using yt-dlp and store in SQLite database."""
+def index_videos(channel_url: str = "https://www.youtube.com/@GameGrumps/videos", db_path: str = "gamegrumps.db") -> None:
+    """Index Game Grumps videos using yt-dlp - FAST, just basic info."""
     try:
         import yt_dlp  # type: ignore
     except ImportError:
         print("yt-dlp is required. Install with: pipx install yt-dlp or pip install yt-dlp")
         sys.exit(1)
     
-    print(f"Scraping: {channel_url}")
+    print(f"Indexing: {channel_url}")
     
-    # First pass: get video list (fast)
-    ydl_opts_flat = {
+    # FAST: Just get video list, no detailed metadata
+    ydl_opts = {
         "extract_flat": True,
         "quiet": True,
         "ignoreerrors": True,
     }
     
-    with yt_dlp.YoutubeDL(ydl_opts_flat) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(channel_url, download=False)
     
     entries = [e for e in (info.get("entries") or []) if e and e.get("id")]
     print(f"Found {len(entries)} videos")
     
-    # Setup database with enhanced schema
+    # Simple database schema - just basic info
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS videos (
-            id TEXT PRIMARY KEY, 
-            title TEXT, 
-            url TEXT,
-            description TEXT,
-            view_count INTEGER,
-            duration INTEGER,
-            upload_date TEXT
-        )
-    """)
-    
-    # Second pass: get detailed info for each video (slower but more data)
-    ydl_opts_detailed = {
-        "quiet": True,
-        "ignoreerrors": True,
-        "no_warnings": True,
-    }
+    c.execute("CREATE TABLE IF NOT EXISTS videos (id TEXT PRIMARY KEY, title TEXT, url TEXT)")
     
     added = 0
-    for i, e in enumerate(entries):
+    for e in entries:
         vid = e["id"]
         title = e.get("title", "Unknown")
         url = f"https://www.youtube.com/watch?v={vid}"
-        
-        # Try to get detailed info
-        description = ""
-        view_count = 0
-        duration = 0
-        upload_date = ""
-        
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts_detailed) as ydl:
-                detailed_info = ydl.extract_info(url, download=False)
-                if detailed_info:
-                    description = detailed_info.get("description", "")[:500]  # Limit description length
-                    view_count = detailed_info.get("view_count", 0) or 0
-                    duration = detailed_info.get("duration", 0) or 0
-                    upload_date = detailed_info.get("upload_date", "")
-        except Exception:
-            # If detailed extraction fails, continue with basic info
-            pass
-        
-        c.execute("""
-            INSERT OR REPLACE INTO videos 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (vid, title, url, description, view_count, duration, upload_date))
+        c.execute("INSERT OR IGNORE INTO videos VALUES (?, ?, ?)", (vid, title, url))
         added += 1
-        
-        if (i + 1) % 100 == 0:
-            print(f"Processed {i + 1}/{len(entries)} videos...")
     
     conn.commit()
     c.execute("SELECT COUNT(*) FROM videos")
@@ -108,28 +66,56 @@ def scrape_videos(channel_url: str = "https://www.youtube.com/@GameGrumps/videos
     print(f"Added {added} videos. Total in DB: {total}")
 
 
-def fetch_random(conn: sqlite3.Connection) -> Tuple[str, str, str, int, int, str]:
-    """Fetch random video with enhanced metadata (backward compatible)."""
+def fetch_random(conn: sqlite3.Connection) -> Tuple[str, str]:
+    """Fetch random video - just basic info from database."""
     cur = conn.cursor()
+    cur.execute("SELECT title, url FROM videos ORDER BY RANDOM() LIMIT 1")
+    row = cur.fetchone()
+    return (row[0], row[1]) if row else ("Unknown", "")
+
+
+def stream_metadata_async(video_id: str, callback) -> None:
+    """Stream metadata on-demand like thumbnails - NO CACHING."""
+    def worker():
+        try:
+            import yt_dlp  # type: ignore
+        except ImportError:
+            GLib.idle_add(lambda: callback(None))
+            return
+        
+        try:
+            ydl_opts = {
+                "quiet": True,
+                "ignoreerrors": True,
+                "no_warnings": True,
+            }
+            
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                
+            if info:
+                description = info.get("description", "")[:500]  # Limit to 500 chars
+                view_count = info.get("view_count", 0) or 0
+                duration = info.get("duration", 0) or 0
+                upload_date = info.get("upload_date", "")
+                
+                metadata = {
+                    "description": description,
+                    "view_count": view_count,
+                    "duration": duration,
+                    "upload_date": upload_date
+                }
+                GLib.idle_add(lambda: callback(metadata))
+            else:
+                GLib.idle_add(lambda: callback(None))
+                
+        except Exception:
+            # If streaming fails, just show basic info
+            GLib.idle_add(lambda: callback(None))
     
-    # Check if new columns exist
-    cur.execute("PRAGMA table_info(videos)")
-    columns = [row[1] for row in cur.fetchall()]
-    
-    if all(col in columns for col in ['description', 'view_count', 'duration', 'upload_date']):
-        # New schema - get all data
-        cur.execute("SELECT title, url, description, view_count, duration, upload_date FROM videos ORDER BY RANDOM() LIMIT 1")
-        row = cur.fetchone()
-        if row:
-            return (row[0], row[1], row[2] or "", row[3] or 0, row[4] or 0, row[5] or "")
-    else:
-        # Old schema - get basic data only
-        cur.execute("SELECT title, url FROM videos ORDER BY RANDOM() LIMIT 1")
-        row = cur.fetchone()
-        if row:
-            return (row[0], row[1], "", 0, 0, "")
-    
-    return ("Unknown", "", "", 0, 0, "")
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
 
 
 def extract_video_id(url: str) -> str:
@@ -406,15 +392,25 @@ class GGWindow(Gtk.Window):
         self.stats_lbl.get_style_context().add_class("gg-stats")
         details.pack_start(self.stats_lbl, False, False, 0)
 
+        # Additional Info expander
+        self.info_expander = Gtk.Expander(label="Additional Info")
+        self.info_expander.set_expanded(False)
+        self.info_expander.get_style_context().add_class("gg-expander")
+        details.pack_start(self.info_expander, False, False, 0)
+        
+        # Info box inside expander
+        info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.info_expander.add(info_box)
+        
         # URL entry (read-only, selectable)
         self.url_entry = Gtk.Entry()
         self.url_entry.set_editable(False)
         self.url_entry.set_can_focus(True)
-        details.pack_start(self.url_entry, False, False, 0)
+        info_box.pack_start(self.url_entry, False, False, 0)
 
         # ID + FreeTube rows
         id_row = Gtk.Box(spacing=6)
-        details.pack_start(id_row, False, False, 0)
+        info_box.pack_start(id_row, False, False, 0)
         id_row.pack_start(Gtk.Label(label="ID:"), False, False, 0)
         self.id_entry = Gtk.Entry()
         self.id_entry.set_editable(False)
@@ -422,7 +418,7 @@ class GGWindow(Gtk.Window):
         id_row.pack_start(self.id_entry, True, True, 0)
 
         ft_row = Gtk.Box(spacing=6)
-        details.pack_start(ft_row, False, False, 0)
+        info_box.pack_start(ft_row, False, False, 0)
         ft_row.pack_start(Gtk.Label(label="FreeTube:"), False, False, 0)
         self.ft_entry = Gtk.Entry()
         self.ft_entry.set_editable(False)
@@ -499,6 +495,13 @@ class GGWindow(Gtk.Window):
         .gg-title { font-weight: 600; font-size: 20px; color: #ffffff; }
         .gg-description { font-size: 14px; color: #b9bbbe; margin-top: 8px; }
         .gg-stats { font-size: 12px; color: #8e9297; margin-top: 4px; }
+        .gg-expander { 
+            background: #2b2d31; 
+            border: 1px solid #3a3d42; 
+            border-radius: 6px; 
+            margin-top: 8px;
+        }
+        .gg-expander:checked { background: #34373c; }
         .gg-status { background: #2b2d31; color: #e6e8eb; border-top: 1px solid #3a3d42; }
         """
         provider = Gtk.CssProvider()
@@ -529,8 +532,8 @@ class GGWindow(Gtk.Window):
                 GLib.idle_add(self.welcome_progress.set_text, "Downloading video list...")
                 GLib.idle_add(self.welcome_progress.pulse)
                 
-                # Use pure Python scraping
-                scrape_videos(db_path=str(DB_PATH))
+                # Use pure Python Indexing
+                index_videos(db_path=str(DB_PATH))
                 
                 GLib.idle_add(self._on_build_complete)
                     
@@ -617,8 +620,8 @@ class GGWindow(Gtk.Window):
         
         def update_worker():
             try:
-                # Use pure Python scraping
-                scrape_videos(db_path=str(DB_PATH))
+                # Use pure Python Indexing
+                index_videos(db_path=str(DB_PATH))
                 GLib.idle_add(self._on_update_complete)
                     
             except Exception as e:
@@ -657,7 +660,7 @@ class GGWindow(Gtk.Window):
         if not self.conn:
             return
         try:
-            title, url, description, view_count, duration, upload_date = fetch_random(self.conn)
+            title, url = fetch_random(self.conn)
             vid = extract_video_id(url)
             
             # Add current video to previous stack before updating
@@ -678,44 +681,16 @@ class GGWindow(Gtk.Window):
             self.id_entry.set_text(vid)
             self.ft_entry.set_text(ft)
             
-            # Update description
-            desc_text = description or "No description available"
-            self.desc_lbl.set_text(desc_text)
-            
-            # Update stats
-            stats_parts = []
-            if view_count > 0:
-                if view_count >= 1000000:
-                    stats_parts.append(f"{view_count/1000000:.1f}M views")
-                elif view_count >= 1000:
-                    stats_parts.append(f"{view_count/1000:.1f}K views")
-                else:
-                    stats_parts.append(f"{view_count:,} views")
-            
-            if duration > 0:
-                hours = duration // 3600
-                minutes = (duration % 3600) // 60
-                if hours > 0:
-                    stats_parts.append(f"{hours}h {minutes}m")
-                else:
-                    stats_parts.append(f"{minutes}m")
-            
-            if upload_date:
-                try:
-                    # Format YYYYMMDD to readable date
-                    year = upload_date[:4]
-                    month = upload_date[4:6]
-                    day = upload_date[6:8]
-                    stats_parts.append(f"{year}-{month}-{day}")
-                except:
-                    pass
-            
-            stats_text = " • ".join(stats_parts) if stats_parts else "No stats available"
-            self.stats_lbl.set_text(stats_text)
+            # Show loading placeholders
+            self.desc_lbl.set_text("Loading description...")
+            self.stats_lbl.set_text("Loading stats...")
             
             # Show loading placeholder while loading thumbnail async
             self._set_loading_placeholder()
             load_thumbnail_async(vid, self._on_thumbnail_loaded)
+            
+            # Stream metadata on-demand (NO CACHING)
+            stream_metadata_async(vid, self._on_metadata_loaded)
             
             # Focus URL for quick copy
             self.url_entry.select_region(0, -1)
@@ -735,28 +710,14 @@ class GGWindow(Gtk.Window):
             # Get the most recent previous video ID
             previous_video_id = self.previous_video_ids.pop()
             
-            # Look up the previous video in the database
+            # Look up the previous video in the database (just basic info)
             cursor = self.conn.cursor()
-            
-            # Check if new columns exist
-            cursor.execute("PRAGMA table_info(videos)")
-            columns = [row[1] for row in cursor.fetchall()]
-            
-            if all(col in columns for col in ['description', 'view_count', 'duration', 'upload_date']):
-                # New schema - get all data
-                cursor.execute("SELECT title, url, description, view_count, duration, upload_date FROM videos WHERE id = ?", (previous_video_id,))
-                result = cursor.fetchone()
-                if result:
-                    title, url, description, view_count, duration, upload_date = result
-            else:
-                # Old schema - get basic data only
-                cursor.execute("SELECT title, url FROM videos WHERE id = ?", (previous_video_id,))
-                result = cursor.fetchone()
-                if result:
-                    title, url = result
-                    description, view_count, duration, upload_date = "", 0, 0, ""
+            cursor.execute("SELECT title, url FROM videos WHERE id = ?", (previous_video_id,))
+            result = cursor.fetchone()
             
             if result:
+                title, url = result
+                
                 # Update current video info
                 self.current_title = title
                 self.current_url = url
@@ -768,44 +729,16 @@ class GGWindow(Gtk.Window):
                 self.id_entry.set_text(previous_video_id)
                 self.ft_entry.set_text(ft)
                 
-                # Update description
-                desc_text = description or "No description available"
-                self.desc_lbl.set_text(desc_text)
-                
-                # Update stats
-                stats_parts = []
-                if view_count > 0:
-                    if view_count >= 1000000:
-                        stats_parts.append(f"{view_count/1000000:.1f}M views")
-                    elif view_count >= 1000:
-                        stats_parts.append(f"{view_count/1000:.1f}K views")
-                    else:
-                        stats_parts.append(f"{view_count:,} views")
-                
-                if duration > 0:
-                    hours = duration // 3600
-                    minutes = (duration % 3600) // 60
-                    if hours > 0:
-                        stats_parts.append(f"{hours}h {minutes}m")
-                    else:
-                        stats_parts.append(f"{minutes}m")
-                
-                if upload_date:
-                    try:
-                        # Format YYYYMMDD to readable date
-                        year = upload_date[:4]
-                        month = upload_date[4:6]
-                        day = upload_date[6:8]
-                        stats_parts.append(f"{year}-{month}-{day}")
-                    except:
-                        pass
-                
-                stats_text = " • ".join(stats_parts) if stats_parts else "No stats available"
-                self.stats_lbl.set_text(stats_text)
+                # Show loading placeholders
+                self.desc_lbl.set_text("Loading description...")
+                self.stats_lbl.set_text("Loading stats...")
                 
                 # Show loading placeholder while loading thumbnail async
                 self._set_loading_placeholder()
                 load_thumbnail_async(previous_video_id, self._on_thumbnail_loaded)
+                
+                # Stream metadata on-demand (NO CACHING)
+                stream_metadata_async(previous_video_id, self._on_metadata_loaded)
                 
                 # Focus URL for quick copy
                 self.url_entry.select_region(0, -1)
@@ -831,6 +764,51 @@ class GGWindow(Gtk.Window):
         else:
             # Keep placeholder if no thumbnail available
             self._set_loading_placeholder()
+    
+    def _on_metadata_loaded(self, metadata: Optional[dict]) -> None:
+        """Handle metadata streaming completion."""
+        if metadata:
+            # Update description
+            desc_text = metadata.get("description", "") or "No description available"
+            self.desc_lbl.set_text(desc_text)
+            
+            # Update stats
+            stats_parts = []
+            view_count = metadata.get("view_count", 0)
+            if view_count > 0:
+                if view_count >= 1000000:
+                    stats_parts.append(f"{view_count/1000000:.1f}M views")
+                elif view_count >= 1000:
+                    stats_parts.append(f"{view_count/1000:.1f}K views")
+                else:
+                    stats_parts.append(f"{view_count:,} views")
+            
+            duration = metadata.get("duration", 0)
+            if duration > 0:
+                hours = duration // 3600
+                minutes = (duration % 3600) // 60
+                if hours > 0:
+                    stats_parts.append(f"{hours}h {minutes}m")
+                else:
+                    stats_parts.append(f"{minutes}m")
+            
+            upload_date = metadata.get("upload_date", "")
+            if upload_date:
+                try:
+                    # Format YYYYMMDD to readable date
+                    year = upload_date[:4]
+                    month = upload_date[4:6]
+                    day = upload_date[6:8]
+                    stats_parts.append(f"{year}-{month}-{day}")
+                except:
+                    pass
+            
+            stats_text = " • ".join(stats_parts) if stats_parts else "No stats available"
+            self.stats_lbl.set_text(stats_text)
+        else:
+            # If streaming failed, show fallback
+            self.desc_lbl.set_text("Description unavailable")
+            self.stats_lbl.set_text("Stats unavailable")
 
     def on_shuffle(self, _btn: Gtk.Button) -> None:
         self.load_random()
@@ -886,7 +864,7 @@ def cli_random(db_path: str = "gamegrumps.db", count: int = 1, mode: str = "brow
     
     c.execute("SELECT COUNT(*) FROM videos")
     if c.fetchone()[0] == 0:
-        print("No videos in database. Run 'python3 gg-shuffle.py scrape' first.")
+        print("No videos in database. Run 'python3 gg-shuffle.py index' first.")
         sys.exit(1)
     
     c.execute(f"SELECT title, url FROM videos ORDER BY RANDOM() LIMIT {count}")
@@ -924,7 +902,7 @@ def cli_tui(db_path: str = "gamegrumps.db", mode: str = "browser") -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Game Grumps Episode Randomizer")
-    parser.add_argument("command", nargs="?", choices=["scrape", "random", "tui"], 
+    parser.add_argument("command", nargs="?", choices=["index", "random", "tui"], 
                        help="Command to run (default: GUI)")
     parser.add_argument("--db", default="gamegrumps.db", help="Database path")
     parser.add_argument("-n", type=int, default=1, help="Number of random videos")
@@ -933,8 +911,8 @@ def main() -> None:
     
     args = parser.parse_args()
     
-    if args.command == "scrape":
-        scrape_videos(db_path=args.db)
+    if args.command == "index":
+        index_videos(db_path=args.db)
     elif args.command == "random":
         mode = "freetube" if args.freetube else "browser"
         cli_random(args.db, args.n, mode)
